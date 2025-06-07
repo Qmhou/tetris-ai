@@ -1,0 +1,90 @@
+# Pygame settings
+screen_width: 400 # 游戏区域宽度 (10 blocks * 30 pixels) + 右侧信息区
+screen_height: 660 # 游戏区域高度 (20 blocks * 30 pixels) + 上下边距
+board_width: 10 # 游戏板宽度（格子数）
+board_height: 20 # 游戏板高度（格子数）
+block_size: 30 # 每个格子的像素大小
+info_panel_width: 200 # 右侧信息面板宽度
+fps: 30
+
+
+# <<< 新增：AI游戏模式的可视化回放参数 >>>
+ai_playback:
+  enabled: true                    # << 总开关：true为像人一样操作，false为瞬移模式
+  move_delay_ms: 50                # << 参数1: AI执行每次左/右/旋转动作后的延迟（毫秒）
+  auto_fall_interval_ms: 200       # << 参数2: AI每隔多少毫秒自动下落一格
+
+
+# Tetrominoes (colors will be defined in code)
+# Shapes are defined in tetrominoes.py
+
+# DQN Agent parameters
+input_dims: 7 # Number of features: height, holes, generalized_wells, smoothness
+#hidden_dims: [128, 64] # Example hidden layer sizes for the QNetwork
+hidden_dims: [256, 128] 
+output_dims: 1 # Output is a single Q-value for the state
+#learning_rate: 0.00025
+learning_rate: 0.0001
+gamma: 0.99 # Discount factor
+epsilon_start: 1.0
+epsilon_end: 0.01
+epsilon_decay_frames: 1000000 # How many frames to decay epsilon over
+batch_size: 32
+memory_size: 50000 # Replay buffer size
+target_update_freq: 1000 # Steps (frames or piece drops) to update target network
+
+# Training parameters
+num_episodes: 50000
+max_steps_per_episode: 3000 # Max moves per game episode during training
+save_model_freq: 100 # Episodes
+eval_freq: 10000 # Episodes (how often to run an evaluation game with rendering/screenshot)
+eval_step_wait_ms: 1
+log_freq: 100 # Episodes (how often to print training stats)
+
+# Paths
+weights_dir: "weights/"
+screenshots_dir: "screenshots/"
+logs_dir: "logs/"
+
+# Game Mechanics
+# config.yaml
+
+# ... (其他配置) ...
+
+# Game Mechanics
+clear_line_scores: [0, 100, 200, 300, 400] # << 修改: 更新为新的消行基础分
+combo_score_base: 100                     # << 新增/修改: 连击基础分 (您提到的 combo_bouns)
+combo_multiplier_schedule:                # << 新增: 连击得分的乘数表
+  - 0  # Combo 1 (第一次消行)
+  - 1  # Combo 2
+  - 1  # Combo 3
+  - 1  # Combo 4
+  - 2  # Combo 5
+  - 2  # Combo 6
+  - 2  # Combo 7
+  - 3  # Combo 8
+  - 3  # Combo 9
+  - 3  # Combo 10+ (之后的都按3倍计算)
+
+# ... (其他奖励/惩罚因子可以保留，以便我们切换回“启发式”奖励模式) ...
+
+# Reward Weights (Heuristic part of the reward beyond score change)
+height_penalty_factor: -0.1
+hole_penalty_factor: -2.5 # Original prompt value, consider making it more negative like -50 or -100
+bumpiness_penalty_factor: -0.8 # Original prompt value, consider -5 or -10
+lines_cleared_reward_factor: 200
+game_over_penalty: -120
+piece_drop_reward: -0.01 # Small positive reward for successfully placing a piece without game over
+combo_base_reward: 200
+well_occupancy_penalty_factor: -8.0 # <<< 新增: 井区占有惩罚因子 (可调整)
+
+feature_scaling_factors:
+  max_height: 20.0
+  max_holes: 50.0  # 根据观察，空洞数可能很多，这个值可以调整
+  max_generalized_wells: 300.0 # 根据观察调整
+  max_bumpiness: 50.0 # 根据观察调整
+  max_completed_lines: 4.0
+  max_combo: 15.0 # 15连击已经非常高了
+  max_well_occupancy: 40.0 # <<< 新增: 井区最大占有格子数 (2列 * 20行 = 40)
+
+auto_load_latest_weights: true

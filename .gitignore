@@ -1,0 +1,134 @@
+# ==============================================================================
+#  Python
+#  
+#  来源: https://github.com/github/gitignore/blob/main/Python.gitignore
+#  ==============================================================================
+
+# 字节码或编译文件
+# Python adds these folders and files everywhere, which is annoying.
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C扩展编译文件
+*.so
+
+# 由分发工具（如 PyBuilder）创建的目录
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+# 通常被 PyInstaller 使用，可以安全地忽略
+*.spec
+
+# Python 安装包
+# 安装包不应该被版本控制
+.venv/
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Sphinx 文档生成
+docs/_build/
+
+# Pytest 相关
+.pytest_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.dmypy.json
+dmypy.json
+
+# mypy 类型检查缓存
+.mypy_cache/
+
+# Django / Flask
+# ------------------------------------------------------------------------------
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+instance/   # Flask instance folder
+.webassets-cache
+
+# Jupyter Notebook
+# ------------------------------------------------------------------------------
+.ipynb_checkpoints
+
+# 编辑器和IDE的配置
+# ------------------------------------------------------------------------------
+# PyCharm
+.idea/
+
+# VS Code
+.vscode/
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Atom
+.atom/
+
+# 其它
+.project
+.pydevproject
+.spyderproject
+.ropeproject
+
+
+# 敏感信息
+# 永远不要将包含密码、API密钥等的环境变量文件提交到仓库
+# ------------------------------------------------------------------------------
+.env
+.env.*
+!/.env.example # 通常 .env.example 文件是用来示例环境变量结构的，应该被版本控制
+
+
+# 操作系统生成文件
+# ------------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Python 虚拟环境
+.venv/
+venv/
+
+# 压缩包
+*.zip
+*.7z
+
+# 手动备份文件（可选，但推荐）
+* copy.py
+*副本.py
+
+# IDE/编辑器配置（推荐）
+.idea/
+.vscode/
+tetris_game_ms1.py
+train_ms1.py
