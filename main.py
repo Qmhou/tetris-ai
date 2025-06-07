@@ -6,13 +6,15 @@ import argparse
 import os
 import sys
 import torch # << 新增导入，analyze_mode中需要用到
-
+import imageio
 # 导入我们项目中的其他模块
 from tetris_game import TetrisGame
 from dqn_agent import DQNAgent 
 from train import train as run_training_mode
 from operation_module import generate_move_sequence
 from tetrominoes import TETROMINOES, Piece # << 新增导入，解决 "TETROMINOES is not defined"
+from datetime import datetime
+
 
 def load_config(config_path='config.yaml'):
     """加载 YAML 配置文件。"""
@@ -95,8 +97,10 @@ def manual_mode(config):
         pygame.quit()
 
 def ai_play_mode(config, model_path):
-    """运行AI自动游戏模式。"""
-    if not pygame.get_init(): pygame.init()
+    """运行AI自动游戏模式，并根据配置增加录制和时长限制功能。"""
+    if not pygame.get_init():
+        pygame.init()
+
     game = TetrisGame(config, render_mode=True)
     agent = DQNAgent(
         input_dims=config['input_dims'],
@@ -107,32 +111,68 @@ def ai_play_mode(config, model_path):
         weights_dir=config['weights_dir']
     )
     
-    load_success, _ = agent.load_weights(model_path)
+    load_success, loaded_at_episode = agent.load_weights(model_path)
     if not load_success:
-        print(f"无法从 {model_path} 加载模型。退出AI模式。")
         if pygame.get_init(): pygame.quit()
         return
 
+    # --- 从config加载回放和录制参数 ---
     playback_config = config.get('ai_playback', {})
-    playback_enabled = playback_config.get('enabled', False)
-    move_delay = playback_config.get('move_delay_ms', 50)
+    playback_enabled = playback_config.get('enabled', True)
+    move_delay = playback_config.get('move_delay_ms', 30)
     fall_interval = playback_config.get('auto_fall_interval_ms', 200)
 
+    record_config = playback_config.get('record_game', {})
+    record_enabled = record_config.get('enabled', False)
+    record_duration_seconds = record_config.get('record_duration_seconds', 0)
+    output_fps = record_config.get('output_fps', 15)
+    max_frames_to_capture = 0
+    if record_enabled and record_duration_seconds > 0:
+        max_frames_to_capture = record_duration_seconds * output_fps
+
+    # --- 游戏主循环 ---
     game.reset()
     running = True
-    op_sequence = []
+    
+    op_sequence = [] 
     fall_timer = 0
     clock = pygame.time.Clock()
+    
+    frames_for_recording = []
+    frame_counter = 0
+
+    print("AI回放模式已启动。按ESC键退出。")
+    if record_enabled:
+        print(f"游戏录制已启用。格式: {record_config.get('output_format', 'gif').upper()}")
+        if record_duration_seconds > 0:
+            print(f"录制时长将被限制为: {record_duration_seconds} 秒。")
 
     while running:
         dt = clock.tick(config.get('fps', 30))
+        
+        # --- 修正后的事件处理循环 ---
         for event in pygame.event.get():
-            if event.type == pygame.QUIT: running = False
+            if event.type == pygame.QUIT:
+                running = False
+            
+            # 首先，只处理键盘按下的事件
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE: running = False
+                # 在这个代码块内，访问 event.key 是安全的
+                if event.key == pygame.K_ESCAPE:
+                    running = False
+                
+                # 只有在游戏结束后，R键才起作用
                 if game.game_over and event.key == pygame.K_r:
                     game.reset()
                     op_sequence = []
+                    frames_for_recording = []
+                    frame_counter = 0
+
+        # --- 游戏逻辑部分 (保持不变) ---
+        if record_enabled and max_frames_to_capture > 0 and len(frames_for_recording) >= max_frames_to_capture:
+            print(f"已捕获足够帧数以生成 {record_duration_seconds} 秒的视频，正在结束游戏...")
+            game.game_over = True 
+            running = False 
 
         if not game.game_over:
             if not op_sequence:
@@ -160,7 +200,46 @@ def ai_play_mode(config, model_path):
 
         game.render() 
 
-    if pygame.get_init(): pygame.quit()
+        if record_enabled and not game.game_over:
+            capture_interval = record_config.get('capture_interval', 4)
+            frame_counter += 1
+            if frame_counter % capture_interval == 0:
+                frame_data = pygame.surfarray.array3d(game.screen)
+                frames_for_recording.append(frame_data.transpose([1, 0, 2]))
+                
+                if max_frames_to_capture > 0 and len(frames_for_recording) >= max_frames_to_capture:
+                    print(f"已捕获足够帧数以生成 {record_duration_seconds} 秒的视频，正在结束游戏...")
+                    running = False 
+
+    # --- 游戏循环结束后，保存回放文件 (逻辑保持不变) ---
+    if record_enabled and frames_for_recording:
+        # ... (这部分保存文件的代码无需修改) ...
+        # ...
+        pass # 此处应为完整的保存逻辑
+        output_format = record_config.get('output_format', 'gif').lower()
+        output_fps = record_config.get('output_fps', 15)
+        
+        print(f"\n正在保存游戏回放为 {output_format.upper()}...")
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        file_extension = ".mp4" if output_format == "mp4" else ".gif"
+        filename = f"ai_playback_ep{loaded_at_episode-1}_{timestamp}{file_extension}"
+        
+        save_dir = "replays"
+        os.makedirs(save_dir, exist_ok=True)
+        save_path = os.path.join(save_dir, filename)
+
+        try:
+            if output_format == 'mp4':
+                imageio.mimsave(save_path, frames_for_recording, fps=output_fps, macro_block_size=1, quality=8)
+            else:
+                imageio.mimsave(save_path, frames_for_recording, fps=output_fps)
+            print(f"游戏回放已成功保存至: {save_path}")
+        except Exception as e:
+            print(f"保存回放时发生错误: {e}")
+
+
+    if pygame.get_init():
+        pygame.quit()
 
 # main.py
 

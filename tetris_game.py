@@ -31,7 +31,7 @@ class TetrisGame:
         self.game_over = False
         self.current_level = 0
         self.combo_count = 0  # << 新增: 连击计数器
-
+        self.max_combo_this_game = 0
         # 初始化方块袋
         self.piece_bag = []
         self._fill_piece_bag()
@@ -93,7 +93,8 @@ class TetrisGame:
         self.can_hold = True
         self.held_piece = None
         self.combo_count = 0  # << 新增：重置连击计数
-        
+        self.max_combo_this_game = 0
+
         self.piece_bag.clear()
         self._fill_piece_bag()
         self._spawn_new_piece()
@@ -167,6 +168,8 @@ class TetrisGame:
         else:
             self.combo_count = 0
 
+        # << 新增：更新最大连击数记录 >>
+        self.max_combo_this_game = max(self.max_combo_this_game, self.combo_count)
         # --- 步骤 3: 实现新的计分逻辑 ---
         # 计算基础消行得分
         line_clear_score_this_turn = 0
@@ -472,20 +475,36 @@ class TetrisGame:
             else:
                 pygame.draw.rect(self.screen, actual_color, block_rect, 0)
 
+
     def draw_info_panel(self):
-        if not self.render_mode: return
+        if not self.render_mode or not hasattr(self, 'screen') or not self.screen: return
+        
         panel_x_start = self.board_width * self.block_size + 20
         current_y = 20
         line_spacing = self.font.get_linesize() + 5
 
+        # 绘制得分和总消行数
         score_text_surface = self.font.render(f"Score: {self.score}", True, self.ocr_font_color)
         self.screen.blit(score_text_surface, (panel_x_start, current_y))
         current_y += line_spacing
 
         lines_text_surface = self.font.render(f"Lines: {self.lines_cleared_total}", True, self.ocr_font_color)
         self.screen.blit(lines_text_surface, (panel_x_start, current_y))
-        current_y += line_spacing * 1.5
+        current_y += line_spacing
 
+        # --- 新增：绘制连击信息 ---
+        combo_color = (255, 200, 0) if self.combo_count > 0 else self.ocr_font_color # 连击时用醒目颜色
+        
+        combo_text_surface = self.font.render(f"Combo: {self.combo_count}", True, combo_color)
+        self.screen.blit(combo_text_surface, (panel_x_start, current_y))
+        current_y += line_spacing
+
+        max_combo_text_surface = self.font.render(f"Max Combo: {self.max_combo_this_game}", True, self.ocr_font_color)
+        self.screen.blit(max_combo_text_surface, (panel_x_start, current_y))
+        current_y += line_spacing * 1.5 # 在连击信息和Next预览之间留出更多空隙
+        # --- 新增结束 ---
+
+        # 绘制 Next Piece
         next_label_surf = self.font.render("Next:", True, self.ocr_font_color)
         self.screen.blit(next_label_surf, (panel_x_start, current_y))
         if self.next_piece:
@@ -493,8 +512,9 @@ class TetrisGame:
             preview_box_origin_y_grid = ((current_y + next_label_surf.get_height() + 5) // self.block_size)
             temp_next_piece = Piece(x=2, y=1, piece_type=self.next_piece.type, rotation_state=self.next_piece.rotation)
             self.draw_piece(temp_next_piece, offset_x_grid=preview_box_origin_x_grid, offset_y_grid=preview_box_origin_y_grid)
-        current_y += next_label_surf.get_height() + 5 + (4 * self.block_size)
+        current_y += next_label_surf.get_height() + 5 + (3 * self.block_size) # 为Next Piece预览区留出空间
 
+        # 绘制 Hold Piece
         hold_label_surf = self.font.render("Hold:", True, self.ocr_font_color)
         self.screen.blit(hold_label_surf, (panel_x_start, current_y))
         if self.held_piece:
@@ -502,6 +522,7 @@ class TetrisGame:
             preview_box_origin_y_grid = ((current_y + hold_label_surf.get_height() + 5) // self.block_size)
             temp_hold_piece = Piece(x=2, y=1, piece_type=self.held_piece.type, rotation_state=self.held_piece.rotation)
             self.draw_piece(temp_hold_piece, offset_x_grid=preview_box_origin_x_grid, offset_y_grid=preview_box_origin_y_grid)
+
 
     def _draw_eval_info_on_screen(self, episode_num, reward_params):
         """在屏幕上绘制评估信息。"""

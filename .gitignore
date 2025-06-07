@@ -132,3 +132,5 @@ venv/
 .vscode/
 tetris_game_ms1.py
 train_ms1.py
+
+replays/
