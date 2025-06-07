@@ -284,18 +284,20 @@ class TetrisGame:
 
     def get_all_possible_next_states_and_features(self):
         """
-        枚举所有可能的落子位置，并为每个位置计算一个经过缩放的、包含7个特征的状态向量。
+        [优化版] 枚举所有可能的落子位置，并为每个“独一无二”的最终盘面
+        计算一个经过缩放的、包含7个特征的状态向量。
         """
         if not self.current_piece or self.game_over:
             return []
 
         possible_placements = []
+        visited_grid_hashes = set() # 用于存储已评估过的盘面哈希值
+
         piece_type = self.current_piece.type
         num_rotations = len(TETROMINOES[piece_type])
         current_combo_count = self.combo_count
 
         for rot_idx in range(num_rotations):
-            # ... (模拟方块硬降的代码保持不变) ...
             test_piece_shape_coords = TETROMINOES[piece_type][rot_idx]
             min_dx = min(c[1] for c in test_piece_shape_coords)
             max_dx = max(c[1] for c in test_piece_shape_coords)
@@ -306,32 +308,38 @@ class TetrisGame:
                 if not self._is_valid_position(sim_piece.shape_coords, sim_piece.x, 0, self.grid):
                     if not self._is_valid_position(sim_piece.shape_coords, sim_piece.x, 1, self.grid):
                         continue 
-                    else: sim_piece.y = 1
+                    else:
+                        sim_piece.y = 1
                 
                 final_y = sim_piece.y
                 while self._is_valid_position(sim_piece.shape_coords, sim_piece.x, final_y + 1, self.grid):
                     final_y += 1
+                
                 sim_piece.y = final_y
 
                 temp_grid_after_placement = self._place_piece_on_grid(sim_piece, self.grid)
                 temp_grid_after_lines_cleared, completed_lines_count = self._simulate_line_clear(temp_grid_after_placement)
+
+                # 将最终盘面转换为可哈希的元组，并进行去重检查
+                grid_hash = tuple(map(tuple, temp_grid_after_lines_cleared))
+                if grid_hash in visited_grid_hashes:
+                    continue # 如果这个盘面状态已经评估过，则跳过
                 
+                visited_grid_hashes.add(grid_hash)
+
+                # --- 后续的特征计算和缩放逻辑保持不变 ---
                 if completed_lines_count > 0:
                     resulting_combo_count = current_combo_count + 1
                 else:
                     resulting_combo_count = 0
 
-                # --- 新增: 计算井区占有数特征 ---
                 well_occupancy_count = 0
                 for r in range(self.board_height):
-                    if temp_grid_after_lines_cleared[r][self.board_width - 1] != 0:
-                        well_occupancy_count += 1
-                    if temp_grid_after_lines_cleared[r][self.board_width - 2] != 0:
-                        well_occupancy_count += 1
+                    if temp_grid_after_lines_cleared[r][self.board_width - 1] != 0: well_occupancy_count += 1
+                    if temp_grid_after_lines_cleared[r][self.board_width - 2] != 0: well_occupancy_count += 1
 
                 height, holes, generalized_wells, bumpiness = self._calculate_grid_metrics(temp_grid_after_lines_cleared)
                 
-                # --- 应用特征缩放 ---
                 scaled_height = min(height, self.scaling_factors['max_height']) / self.scaling_factors['max_height']
                 scaled_holes = min(holes, self.scaling_factors['max_holes']) / self.scaling_factors['max_holes']
                 scaled_generalized_wells = min(generalized_wells, self.scaling_factors['max_generalized_wells']) / self.scaling_factors['max_generalized_wells']
@@ -340,11 +348,10 @@ class TetrisGame:
                 scaled_resulting_combo = min(resulting_combo_count, self.scaling_factors['max_combo']) / self.scaling_factors['max_combo']
                 scaled_well_occupancy = min(well_occupancy_count, self.scaling_factors['max_well_occupancy']) / self.scaling_factors['max_well_occupancy']
 
-                # 构建包含7个特征的向量
                 scaled_features_vector = np.array([
                     scaled_height, scaled_holes, scaled_generalized_wells, 
                     scaled_bumpiness, scaled_completed_lines, scaled_resulting_combo,
-                    scaled_well_occupancy # << 新增
+                    scaled_well_occupancy
                 ], dtype=np.float32)
                 
                 action_info = (piece_type, rot_idx, start_x_col, final_y)

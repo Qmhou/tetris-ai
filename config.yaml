@@ -11,8 +11,8 @@ fps: 30
 # <<< 新增：AI游戏模式的可视化回放参数 >>>
 ai_playback:
   enabled: true                    # << 总开关：true为像人一样操作，false为瞬移模式
-  move_delay_ms: 50                # << 参数1: AI执行每次左/右/旋转动作后的延迟（毫秒）
-  auto_fall_interval_ms: 200       # << 参数2: AI每隔多少毫秒自动下落一格
+  move_delay_ms: 200                # << 参数1: AI执行每次左/右/旋转动作后的延迟（毫秒）
+  auto_fall_interval_ms: 500       # << 参数2: AI每隔多少毫秒自动下落一格
 
 
 # Tetrominoes (colors will be defined in code)

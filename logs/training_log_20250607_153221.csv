@@ -1,0 +1,2 @@
+Episode,TotalSteps,Epsilon,AvgTotalReward100,AvgLines100,Loss,TimeElapsed,Avg_Scorech_100,Avg_Heightp_100,Avg_Holep_100,Avg_Bumpine_100,Avg_Linesr_100,Avg_Combor_100,Avg_Well_oc_100,Avg_Game_ov_100,Avg_Piece_d_100
+18400,1398908,0.0100,62504.8000,455.8200,27229.1836,2636.68,54.3140,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,-0.3287,0.0000

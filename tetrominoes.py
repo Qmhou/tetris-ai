@@ -19,51 +19,38 @@ GRID_LINE_COLOR = (100, 100, 100)
 # The pivot is usually one of the blocks or the center of rotation.
 # Standard SRS shapes and their rotation states (0, 1, 2, 3)
 TETROMINOES = {
-    'I': [
-        [(0, -2), (0, -1), (0, 0), (0, 1)],  # State 0 (Horizontal, pivot on 3rd block from left)
-        [(-2, 0), (-1, 0), (0, 0), (1, 0)],  # State 1 (Vertical, pivot on 3rd block from top)
-        [(0, -1), (0, 0), (0, 1), (0, 2)],  # State 2 (Horizontal, pivot on 2nd block from left)
-        [(-1, 0), (0, 0), (1, 0), (2, 0)]   # State 3 (Vertical, pivot on 2nd block from top)
-    ],
-    'O': [ # O-piece rotation doesn't change its shape visually in SRS for a 2x2 block representation
-        [(0, 0), (0, 1), (1, 0), (1, 1)], # Pivot usually center of 2x2
-        [(0, 0), (0, 1), (1, 0), (1, 1)],
-        [(0, 0), (0, 1), (1, 0), (1, 1)],
-        [(0, 0), (0, 1), (1, 0), (1, 1)]
-    ],
-    'T': [
-        [(0, -1), (0, 0), (0, 1), (-1, 0)], # State 0 (T pointing up, pivot on center bottom)
-        [(0, 0), (-1, 0), (1, 0), (0, 1)],  # State 1 (T pointing right)
-        [(0, -1), (0, 0), (0, 1), (1, 0)],  # State 2 (T pointing down)
-        [(0, 0), (-1, 0), (1, 0), (0, -1)]  # State 3 (T pointing left)
-    ],
     'S': [
-        [(0, 0), (0, 1), (-1, -1), (-1, 0)], # State 0
-        [(-1, 0), (0, 0), (0, 1), (1, 1)],   # State 1
-        [(0, 0), (0, -1), (1, 1), (1, 0)],   # State 2 (Same as state 0 if pivot is (0,0) for S)
-        # Redefining to match SRS common practice, using states 0 and 1, where 2 is 0 and 3 is 1
-        [(0, 0), (0, 1), (-1, -1), (-1, 0)], # State 2 (same as 0)
-        [(-1, 0), (0, 0), (0, 1), (1, 1)],   # State 3 (same as 1)
+        [(0, 0), (0, 1), (1, -1), (1, 0)],  # 状态 0 / 2
+        [(0, 0), (1, 0), (1, 1), (2, 1)]   # 状态 1 / 3
     ],
     'Z': [
-        [(0, -1), (0, 0), (-1, 0), (-1, 1)],# State 0
-        [(-1, 1), (0, 1), (0, 0), (1, 0)],  # State 1
-        [(0, 1), (0, 0), (1, 0), (1, -1)],  # State 2 (Same as state 0 if pivot is (0,0) for Z)
-        # Redefining to match SRS common practice
-        [(0, -1), (0, 0), (-1, 0), (-1, 1)],# State 2 (same as 0)
-        [(-1, 1), (0, 1), (0, 0), (1, 0)],  # State 3 (same as 1)
+        [(0, -1), (0, 0), (1, 0), (1, 1)], # 状态 0 / 2
+        [(0, 1), (1, 0), (1, 1), (2, 0)]   # 状态 1 / 3
+    ],
+    'I': [
+        [(1, 0), (1, 1), (1, 2), (1, 3)],  # 状态 0 / 2
+        [(0, 2), (1, 2), (2, 2), (3, 2)]   # 状态 1 / 3
+    ],
+    'O': [
+        [(0, 1), (0, 2), (1, 1), (1, 2)]   # O型方块只有一个状态
+    ],
+    'T': [
+        [(0, 1), (1, 0), (1, 1), (1, 2)],  # 状态 0
+        [(0, 1), (1, 1), (1, 2), (2, 1)],  # 状态 1
+        [(1, 0), (1, 1), (1, 2), (2, 1)],  # 状态 2
+        [(0, 1), (1, 0), (1, 1), (2, 1)]   # 状态 3
     ],
     'J': [
-        [(0, -1), (0, 0), (0, 1), (-1, -1)],# State 0
-        [(-1, 0), (0, 0), (1, 0), (-1, 1)], # State 1
-        [(0, -1), (0, 0), (0, 1), (1, 1)],  # State 2
-        [(-1, 0), (0, 0), (1, 0), (1, -1)]  # State 3
+        [(0, 0), (1, 0), (1, 1), (1, 2)],  # 状态 0
+        [(0, 1), (0, 2), (1, 1), (2, 1)],  # 状态 1
+        [(1, 0), (1, 1), (1, 2), (2, 2)],  # 状态 2
+        [(0, 1), (1, 1), (2, 0), (2, 1)]   # 状态 3
     ],
     'L': [
-        [(0, -1), (0, 0), (0, 1), (-1, 1)], # State 0
-        [(-1, 0), (0, 0), (1, 0), (1, 1)],  # State 1
-        [(0, -1), (0, 0), (0, 1), (1, -1)], # State 2
-        [(-1, 0), (0, 0), (1, 0), (-1, -1)] # State 3
+        [(0, 2), (1, 0), (1, 1), (1, 2)],  # 状态 0
+        [(0, 1), (1, 1), (2, 1), (2, 2)],  # 状态 1
+        [(1, 0), (1, 1), (1, 2), (2, 0)],  # 状态 2
+        [(0, 0), (0, 1), (1, 1), (2, 1)]   # 状态 3
     ]
 }
 
@@ -97,47 +84,48 @@ class Piece:
         """Returns a list of (row, col) for each block of the piece on the board."""
         return [(self.y + dy, self.x + dx) for dy, dx in self.shape_coords]
 
+# tetrominoes.py (修改 Piece.rotate 方法)
     def rotate(self, direction, board_width, board_height, is_valid_position_func):
         """
-        Rotates the piece using SRS kick data.
-        `is_valid_position_func` is a callback to the TetrisGame to check board collisions.
+        使用SRS踢墙数据来旋转方块。
+        direction: 1 表示顺时针, -1 表示逆时针。
+        is_valid_position_func: 一个回调函数，用于检查新位置是否有效。
         """
-        from srs_data import get_kick_offsets # Avoid circular import at module level
+        from srs_data import get_kick_offsets # 确保在函数内导入以避免循环依赖
 
-        original_rotation = self.rotation
-        original_x, original_y = self.x, self.y
-
-        if self.type == 'O': # O-piece does not "kick" or change shape typically
-            return True # Or handle its fixed rotation if defined differently
+        if self.type == 'O': # O型方块不旋转
+            return True
 
         num_rotations = len(TETROMINOES[self.type])
-        if num_rotations <= 1: # For pieces like 'O' if only one shape is defined
-             return True
+        original_rotation = self.rotation
+        
+        # 计算目标旋转状态 (处理-1的情况)
+        target_rotation = (original_rotation + direction + num_rotations) % num_rotations
 
-        target_rotation = (self.rotation + direction) % num_rotations
-        if target_rotation < 0: # Handle negative direction for clockwise
-             target_rotation += num_rotations
-
-
+        # 获取需要测试的踢墙偏移量列表
         kick_test_set = get_kick_offsets(self.type, original_rotation, target_rotation)
-
+        
+        # 获取旋转后的新形状坐标
         new_shape_coords = TETROMINOES[self.type][target_rotation]
 
+        # 依次尝试每个踢墙偏移量
         for dx_kick, dy_kick in kick_test_set:
+            # 计算应用偏移后的新位置
+            # Pygame中Y轴向下为正，而SRS标准通常向上为正，所以y_kick需要反转符号
             potential_x = self.x + dx_kick
-            potential_y = self.y - dy_kick # Kicks are often defined as (x, -y) relative to TGM display
+            potential_y = self.y - dy_kick # << 关键点：注意这里的减号！
 
+            # 使用游戏主逻辑提供的函数检查新位置是否有效
             if is_valid_position_func(new_shape_coords, potential_x, potential_y):
+                # 如果有效，更新方块状态并成功返回
                 self.x = potential_x
                 self.y = potential_y
                 self.rotation = target_rotation
                 self.shape_coords = new_shape_coords
                 return True
         
-        # If no kick works, revert to original state (though this shouldn't happen often with SRS)
-        self.x = original_x
-        self.y = original_y
-        return False # Rotation failed
+        # 如果所有踢墙尝试都失败了，则旋转失败
+        return False
 
 if __name__ == '__main__':
     # Example:
