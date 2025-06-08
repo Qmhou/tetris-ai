@@ -1,163 +1,100 @@
-# AI驱动的俄罗斯方块游戏 (AI-Powered Tetris)
+Of course. Here is a comprehensive `README.md` for our project, written in English, reflecting its current advanced state and development history.
 
-## 项目概述
+---
 
-本项目旨在创建一个功能丰富的俄罗斯方块游戏，包括手动操作模式、AI游戏模式以及一个可继续训练的AI训练模式。AI部分采用深度强化学习（DQN - Deep Q-Network）方法，通过神经网络评估不同落子选择的价值，从而实现智能游戏。游戏界面和逻辑基于Pygame，神经网络部分使用PyTorch。
+# Advanced DQN Tetris AI
 
-## 主要特性
+## Overview
 
-* **多种游戏模式**:
-    * **手动模式 (Manual Mode)**: 玩家通过键盘手动控制方块。
-    * **AI模式 (AI Mode)**: AI根据训练好的模型自动进行游戏，展示其游戏水平。
-    * **训练模式 (Train Mode)**: AI进行学习训练，支持从断点继续训练，并可配置训练参数。
-* **标准俄罗斯方块机制**:
-    * 7-bag方块生成机制，确保方块分布的公平性。
-    * 超级旋转系统 (Super Rotation System - SRS)，包括墙壁踢和地面踢。
-    * 得分、消行、下一块预览、暂存块（Hold）等标准功能。
-* **深度强化学习AI**:
-    * 使用DQN算法，神经网络评估特定盘面状态的价值。
-    * AI通过枚举当前方块所有可能的最终落点，并选择价值最高的方案。
-    * 明确的状态特征工程，用于描述盘面状态：高度、空洞、广义井、平滑度。
-    * 可定制的奖励函数，用于指导AI学习。
-* **可配置与可扩展**:
-    * 通过 `config.yaml` 文件配置游戏参数、神经网络结构和训练参数。
-    * 模块化代码设计，易于理解、修改和扩展。
+This project is an advanced Tetris AI powered by a Deep Q-Network (DQN) built with PyTorch and Pygame. The primary mission is not just to play well, but to train an agent to learn and master a specific, expert-level strategy: the **Side 2-Wide (s2w) well**, which enables high-scoring, long-running combos.
 
-## 项目结构树
+The project features a complete training and evaluation framework, including detailed logging, checkpointing, and multiple operational modes for play, analysis, and visualization. Through an iterative process of sophisticated reward shaping and feature engineering, the AI has successfully learned this complex strategy and achieved superhuman performance.
 
-```
-AI-Tetris/
-├── weights/                  # 存放训练好的模型权重
-│   └── (例如 dqn_tetris_episode_1000.pth)
-├── screenshots/              # 存放训练过程中评估模式的游戏截图
-│   └── (例如 eval_episode_1000_final.png)
-├── logs/                     # 存放训练日志
-│   └── (例如 training_log_YYYYMMDD_HHMMSS.csv)
-├── config.yaml               # 配置文件 (游戏参数, AI参数, 训练参数)
-├── main.py                   # 主程序入口，模式选择
-├── train.py                  # AI训练脚本
-├── tetris_game.py            # Tetris游戏核心逻辑模块
-├── dqn_agent.py              # DQN Agent及神经网络模块
-├── tetrominoes.py            # 定义方块形状、颜色及Piece类
-├── srs_data.py               # SRS旋转的踢墙数据
-├── operation_module.py       # (概念上)操作模块，实际逻辑可能整合在tetris_game.py
-├── README.md                 # 本文件
-└── requirements.txt          # (建议添加)项目依赖
-```
+## Key Features
 
-## 技术栈
+-   **Expert Strategy Goal**: AI is specifically trained to learn the `s2w` (Side 2-Wide well) combo strategy.
+-   **Advanced State Representation**: Utilizes a 7-dimensional feature vector, including custom-designed features like "s2w-aware bumpiness," "well occupancy," and "completed lines" for precise state evaluation.
+-   **Sophisticated Reward Shaping**: Employs a complex reward function with a high-value, incremental combo bonus system and targeted penalties to guide behavior.
+-   **Multiple Operational Modes**: Includes `manual` play, AI `train` mode, AI `playback` mode, and an interactive `analyze` mode.
+-   **Interactive Analysis Mode**: A powerful tool to visualize the AI's decision-making process in real-time, showing the V-score for every possible move.
+-   **Built-in Game Recorder**: The AI playback mode can be configured to record gameplay as a high-quality MP4 or GIF file with a set time limit.
+-   **Comprehensive Training Framework**: Supports checkpointing to resume training, detailed CSV logging of all reward components, and annotated evaluation screenshots.
 
-* **游戏框架**: Pygame
-* **神经网络**: PyTorch
-* **配置**: PyYAML
-* **数值计算**: NumPy
-* **核心语言**: Python 3.x
+## Tech Stack
 
-## 安装与环境设置
+-   **Game Engine**: Pygame
+-   **Neural Network**: PyTorch
+-   **Numerical Computation**: NumPy
+-   **Configuration**: PyYAML
 
-1.  **克隆仓库** (如果代码在git仓库中):
-    ```bash
-    git clone <your-repository-url>
-    cd AI-Tetris
+## Setup and Installation
+
+1.  **Install PyTorch**: First, install PyTorch by following the official instructions for your system (CPU or CUDA-enabled GPU). Visit the [PyTorch website](https://pytorch.org/get-started/locally/) to get the correct command.
+
+2.  **Install Dependencies**: Create a file named `requirements.txt` with the following content:
+
     ```
-
-2.  **创建虚拟环境** (推荐):
-    ```bash
-    python -m venv venv
-    source venv/bin/activate  # Linux/macOS
-    # venv\Scripts\activate   # Windows
-    ```
-
-3.  **安装依赖**:
-    创建一个 `requirements.txt` 文件，内容如下:
-    ```txt
     pygame
-    torch
-    numpy
     PyYAML
+    numpy
+    imageio
+    imageio-ffmpeg
+    Pillow
     ```
-    然后运行:
+    Then, in your activated Python virtual environment, run:
     ```bash
     pip install -r requirements.txt
     ```
-    *注意: PyTorch的安装可能因您的操作系统和CUDA版本而异。请参考 [PyTorch官方网站](https://pytorch.org/get-started/locally/) 获取特定安装命令。*
 
-## 使用说明
+## Usage
 
-通过 `main.py` 脚本启动游戏，并指定运行模式。
+Run the project from your terminal using `main.py` with the `--mode` flag.
 
-1.  **手动模式**:
+-   **Manual Mode**:
     ```bash
     python main.py --mode manual
     ```
-    * **操作按键**:
-        * 左箭头: 左移
-        * 右箭头: 右移
-        * 下箭头: 软降
-        * 上箭头: 顺时针旋转
-        * `Z` 键: 逆时针旋转 (可选实现)
-        * 空格键: 硬降
-        * `C` 键: 暂存/交换方块
-        * `ESC` 键: 退出游戏
-        * `R` 键: (游戏结束后) 重新开始
-
-2.  **AI游戏模式**:
-    需要一个预训练的模型权重文件。脚本会尝试加载最新的模型（如果未指定）。
-    ```bash
-    python main.py --mode ai --model_path weights/your_trained_model.pth
-    ```
-    或者让脚本自动查找最新模型：
+-   **AI Playback Mode** (loads the latest model automatically):
     ```bash
     python main.py --mode ai
     ```
-    * AI将自动玩游戏。按 `ESC` 键退出，游戏结束后按 `R` 键重新开始。
-
-3.  **AI训练模式**:
+-   **Interactive Analysis Mode** (requires a trained model):
     ```bash
-    python main.py --mode train
+    python main.py --mode analyze --model_path weights/your_model.pth
     ```
-    * 训练过程将在后台静默运行（默认无图形界面，除非在`train.py`中为评估阶段开启）。
-    * 模型权重将定期保存在 `weights/` 目录下。
-    * 训练日志将保存在 `logs/` 目录下。
-    * 评估阶段的游戏截图将保存在 `screenshots/` 目录下。
-    * **继续训练**: `train.py` 脚本中可以添加逻辑来加载 `--model_path` 指定的权重文件，以继续之前的训练。
+-   **Training Mode**:
+    * To start a new training run:
+        ```bash
+        python main.py --mode train
+        ```
+    * To continue training from a specific checkpoint:
+        ```bash
+        python main.py --mode train --model_path weights/your_model.pth
+        ```
+---
 
-## 配置文件 (`config.yaml`)
+### 4. Major Evolution Milestones
 
-`config.yaml` 文件包含了游戏、AI代理和训练过程的各项参数，例如：
+1.  **Initial Architecture (2025-06-07)**: Established the project architecture using Pygame and PyTorch, based on a DQN variant that learns a state-value function `V(s')` for post-move states.
+2.  **Reward Shaping Iteration (2025-06-07)**: Overcame the "lazy AI" problem by removing a large immediate `piece_drop_reward` and introducing a high-value, delayed `combo_base_reward`, forcing the AI to pursue line-clearing combos.
+3.  **Advanced Feature Engineering (2025-06-07)**: Expanded the state vector from 4 to 7 dimensions, adding **"Completed Lines," "Resulting Combo Count,"** and **"Well Occupancy"** to give the AI better foresight and situational awareness.
+4.  **Custom Game Mechanics for s2w (2025-06-07)**: Implemented a custom **"s2w-aware bumpiness"** calculation that ignores the two rightmost columns, creating a "penalty-free zone" crucial for learning the s2w well structure.
+5.  **Training Stability Improvements (2025-06-07)**: Implemented Min-Max feature scaling and down-weighted the influence of the volatile "Generalized Wells" feature to stabilize the training process.
+6.  **Breakthrough Performance (2025-06-07)**: The AI achieved superhuman performance in evaluation mode (clearing >1200 lines), validating the effectiveness of the advanced features and "harsh but fair" reward parameters.
+7.  **Visualization & Analysis Tools (2025-06-07)**: Developed the interactive analysis mode and GIF/MP4 recording functionality to allow for deep, qualitative analysis of the AI's behavior and for sharing results.
 
-* 游戏板尺寸、方块大小
-* 神经网络结构 (隐藏层大小)
-* 学习率、折扣因子 ($\gamma$)、$\epsilon$-greedy策略参数
-* 经验回放缓冲区大小、批处理大小
-* 模型保存频率、评估频率
-* 奖励函数中的各启发式权重因子
+### 5. Recently Resolved Issues
 
-可以根据需要调整这些参数以优化AI性能或改变游戏行为。
+-   (2025-06-07) Solved the AI's tendency to misuse the "penalty-free zone" as a dumping ground by adding a direct `well_occupancy_penalty`.
+-   (2025-06-07) Fixed a critical bug in the SRS rotation logic where S and Z tetrominoes had incorrect shape definitions.
+-   (2025-06-07) Optimized the action enumeration process by de-duplicating moves for symmetrical pieces, increasing decision-making efficiency.
+-   (2025-06-07) Resolved the paradox of high `Loss` values co-occurring with massive performance gains by identifying it as a symptom of rapid "value function reassessment."
+-   (2025-06-07) Addressed and fixed multiple `AttributeError` and `ModuleNotFoundError` issues to enable all game modes, including manual, analysis, and video recording.
 
-## AI状态特征与奖励机制
+### 6. TODO / Next Priorities
 
-### 状态特征 (State Features)
-
-传递给神经网络的特征向量，用于描述一个潜在落子动作完成后的盘面状态：
-
-1.  **高度 (Height)**: `y_max`，盘面最高填充列的高度。
-2.  **空洞 (Holes)**: `num_covered_holes`，上方有方块覆盖的空格子数量。
-3.  **广义井 (Generalized Wells)**: `num_generalized_wells`，旨在惩罚所有最高点以下的未填充空间。
-4.  **平滑度 (Smoothness/Bumpiness)**: `bumpiness_value`，相邻列块高度差的绝对值之和。
-
-### 奖励机制 (Reward Function)
-
-当一个方块固定后，根据盘面变化和启发式规则计算奖励：
-
-`reward = (score - old_score) + height_penalty + hole_penalty + bumpiness_penalty + lines_reward + game_over_penalty + piece_drop_reward`
-
-其中各项惩罚/奖励因子可在 `config.yaml` 中调整。
-
-## 未来可能的改进
-
-* 更复杂的神经网络结构 (如卷积层直接处理盘面图像)。
-* 更高级的强化学习算法 (如 Rainbow DQN, PPO)。
-
-
-
+1.  **Primary Goal: Continued Training & Convergence**: The immediate priority is to continue the current successful training run long-term. The goal is to allow Epsilon to fully decay and observe if the average performance (`AvgLines100`, etc.) converges to a stable, high-level plateau.
+2.  **Performance Ceiling Analysis**: Determine the ultimate performance limit of the current AI under the existing parameter set.
+3.  **Fine-Tuning (Post-Convergence)**: Once performance has plateaued, experiment with reducing the `learning_rate` to allow for final, fine-grained optimization of the policy.
+4.  **Strategic Analysis**: Use the `analyze` mode and recorded videos to perform a deep qualitative analysis of the AI's high-level strategy, identifying any remaining subtle flaws or potential areas for improvement.
+5.  **Future Experiments (Optional)**: After the current model is finalized, use it as a baseline to explore new challenges, such as teaching it different strategies (e.g., T-Spins) with a redesigned reward function or testing its robustness in environments with increasing speed.
