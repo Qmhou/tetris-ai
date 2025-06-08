@@ -135,4 +135,6 @@ train_ms1.py
 
 replays/
 create_project.py
-create_project.py
+
+visualize_backward_pass.py
+visualize_forward_pass.py

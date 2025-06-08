@@ -1,7 +1,3 @@
-Of course. Here is a comprehensive `README.md` for our project, written in English, reflecting its current advanced state and development history.
-
----
-
 # Advanced DQN Tetris AI
 
 ## Overview
