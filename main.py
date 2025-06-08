@@ -22,75 +22,70 @@ def load_config(config_path='config.yaml'):
         return yaml.safe_load(f)
 
 def manual_mode(config):
-    """[修正版] 运行手动游戏模式，使用 execute_atomic_action。"""
-    if not pygame.get_init(): pygame.init()
+    """[最终修正版] 运行手动游戏/调试模式，具有稳健的输入处理。"""
+    if not pygame.get_init():
+        pygame.init()
     
-    # 同样，可以将调试模式的代码放入这里来测试旋转
-    # 为此，您可能需要修改 Piece.rotate 方法以包含打印语句
     game = TetrisGame(config, render_mode=True)
     game.reset()
     
     print("\n--- 进入手动/调试模式 ---")
-    print("使用方向键移动，上箭头/X键顺时针旋转，Z键逆时针旋转。")
-    print("按N键生成下一个方块，按ESC键退出。")
+    print("方向键:移动 | 上/X:顺时针 | Z:逆时针 | 空格:硬降 | C/Shift:暂存 | N:下一块 | R:重开 | ESC:退出")
 
     running = True
-    fall_time = 0
-    fall_speed = 500  # ms, 方块自动下落的间隔
+    fall_timer = 0
+    fall_speed = 500  # ms
+    clock = pygame.time.Clock()
 
-    # 定义按键到动作字符串的映射
+    # --- 完整的、统一的按键到动作的映射 ---
     key_to_action_map = {
         pygame.K_LEFT: 'left',
         pygame.K_RIGHT: 'right',
         pygame.K_DOWN: 'soft_drop',
         pygame.K_SPACE: 'hard_drop',
         pygame.K_UP: 'rotate_cw',
-        pygame.K_x: 'rotate_cw', # 兼容另一种常见旋转键
+        pygame.K_x: 'rotate_cw',
         pygame.K_z: 'rotate_ccw',
         pygame.K_c: 'hold',
         pygame.K_LSHIFT: 'hold',
         pygame.K_RSHIFT: 'hold'
     }
 
-    clock = pygame.time.Clock()
-
     while running:
-        # 渲染永远在循环的末尾，以绘制最新状态
-        # game.render() 
-
         dt = clock.tick(config.get('fps', 30))
 
-        # 事件处理
+        # --- 稳健的事件处理循环 ---
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+                continue
+
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     running = False
+                    continue
                 
-                if game.game_over and event.key == pygame.K_r:
-                    game.reset()
-                
-                # 手动生成下一个方块用于测试
-                if event.key == pygame.K_n:
-                    game._spawn_new_piece()
+                if game.game_over:
+                    if event.key == pygame.K_r:
+                        game.reset()
+                        fall_timer = 0
+                    continue # 游戏结束时，只响应R键，忽略所有其他按键
 
-                # 将按键映射到动作并执行
-                if not game.game_over and event.key in key_to_action_map:
+                # 游戏进行中的按键处理
+                if event.key == pygame.K_n:
+                    game._spawn_new_piece() # 调试用
+                elif event.key in key_to_action_map:
                     action = key_to_action_map[event.key]
-                    # 如果是旋转动作，可以在此加入调试打印
-                    if 'rotate' in action:
-                        print(f"\n[调试] 尝试执行动作: {action}")
                     game.execute_atomic_action(action)
-        
+                # 对于其他所有未在map中定义的按键，将在此被安全地忽略
+
         # 处理重力自动下落
         if not game.game_over:
-            fall_time += dt
-            if fall_time >= fall_speed:
-                fall_time = 0
+            fall_timer += dt
+            if fall_timer >= fall_speed:
+                fall_timer = 0
                 game.execute_atomic_action('soft_drop')
         
-        # 在所有逻辑更新后，进行一次渲染
         game.render()
 
     if pygame.get_init():
