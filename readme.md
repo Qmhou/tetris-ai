@@ -6,6 +6,10 @@ This project is an advanced Tetris AI powered by a Deep Q-Network (DQN) built wi
 
 The project features a complete training and evaluation framework, including detailed logging, checkpointing, and multiple operational modes for play, analysis, and visualization. Through an iterative process of sophisticated reward shaping and feature engineering, the AI has successfully learned this complex strategy and achieved superhuman performance.
 
+
+[DEMO]
+(ai_playback_ep18800_20250607_233308.mp4)
+
 ## Key Features
 
 -   **Expert Strategy Goal**: AI is specifically trained to learn the `s2w` (Side 2-Wide well) combo strategy.
