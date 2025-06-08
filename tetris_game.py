@@ -11,6 +11,7 @@ import torch
 # GHOST_COLOR (例如 (100, 100, 100, 128)), EMPTY_COLOR, GRID_LINE_COLOR,
 # 以及 Piece 类 (包含其旋转逻辑)
 from tetrominoes import TETROMINOES, COLORS, PIECE_TYPES, Piece, INITIAL_POSITIONS, GHOST_COLOR, EMPTY_COLOR, GRID_LINE_COLOR
+from collections import deque, defaultdict
 
 class TetrisGame:
     def __init__(self, config, render_mode=False):
@@ -152,51 +153,43 @@ class TetrisGame:
 
     def _lock_piece(self):
         """
-        [CNN+T-Spin Version] Locks the piece, detects T-Spins, and calculates
-        a reward based on the new T-Spin-focused reward system.
+        [日志增强版] Locks the piece, detects T-Spins, and returns a
+        detailed dictionary of all reward components for logging.
         """
-        
-        # --- 步骤 1: T-Spin 检测 ---
-        # Must be done BEFORE placing the piece, using its final position
-        # We need to know if the last move was a rotation, this requires tracking state
-        # For simplicity, we'll use the robust 3-corner geometric check
+        reward_components = defaultdict(float)
         is_tspin = self._check_tspin_conditions(self.current_piece, self.grid)
 
-        # --- 步骤 2: 锁定方块到网格 ---
         self.grid = self._place_piece_on_grid(self.current_piece, self.grid)
-
-        # --- 步骤 3: 消行和计分 ---
         lines_cleared = self._clear_lines()
         self.lines_cleared_total += lines_cleared
         
-        # --- 步骤 4: 计算奖励 (新的奖励逻辑) ---
-        reward = 0
-        score_change = 0 # You'd update self.score based on a new scoring system
-
+        # --- 新的T-Spin和消行奖励逻辑 ---
         if is_tspin:
-            reward += self.config['tspin_reward']
+            reward_components['tspin_reward'] = self.config['tspin_reward']
             if lines_cleared == 0:
-                reward += self.config['tspin_mini_reward']
+                reward_components['tspin_mini_reward'] = self.config['tspin_mini_reward']
             elif lines_cleared == 1:
-                reward += self.config['tspin_single_reward']
+                reward_components['tspin_single_reward'] = self.config['tspin_single_reward']
             elif lines_cleared == 2:
-                reward += self.config['tspin_double_reward']
+                reward_components['tspin_double_reward'] = self.config['tspin_double_reward']
             elif lines_cleared == 3:
-                reward += self.config['tspin_triple_reward']
-        else: # Regular line clear
+                reward_components['tspin_triple_reward'] = self.config['tspin_triple_reward']
+        else:
             if lines_cleared > 0:
-                reward += lines_cleared * self.config['line_clear_reward']
+                reward_components['line_clear_reward'] = lines_cleared * self.config['line_clear_reward']
                 if lines_cleared == 4:
-                    reward += self.config['tetris_reward_bonus']
+                    reward_components['tetris_reward_bonus'] = self.config['tetris_reward_bonus']
         
-        # --- 步骤 5: 游戏结束判断和新方块 ---
         self._spawn_new_piece()
         is_terminal_step = self.game_over 
         if is_terminal_step:
-            reward += self.config['game_over_penalty']
+            reward_components['game_over_penalty'] = self.config['game_over_penalty']
         
-        # This structure is simplified. You would return a dictionary of reward components for logging.
-        return {"final_reward": reward}, is_terminal_step, lines_cleared
+        # 计算最终的总奖励
+        total_reward = sum(reward_components.values())
+        reward_components['final_reward'] = total_reward
+        
+        return reward_components, is_terminal_step, lines_cleared
 
     def _clear_lines(self):
         lines_to_clear_indices = [r_idx for r_idx, row in enumerate(self.grid) if all(cell != 0 for cell in row)]

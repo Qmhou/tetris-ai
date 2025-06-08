@@ -140,3 +140,5 @@ logs/
 mlruns/
 weights/
 logs/
+
+memo.txt

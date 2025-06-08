@@ -30,17 +30,17 @@ cnn_input_channels: 4 # Number of channels for the CNN input
 gamma: 0.99 # Discount factor
 epsilon_start: 1.0
 epsilon_end: 0.01
-epsilon_decay_frames: 2000000 # CNN might need longer to learn
+epsilon_decay_frames: 10000000 # CNN might need longer to learn
 batch_size: 64 # Larger batch size can be stable for CNNs
 memory_size: 100000 # Increased memory size
 target_update_freq: 2500 # Update target network less frequently
 
 # Training parameters
-num_episodes: 30000
+num_episodes: 3000000
 learning_rate: 0.0001
 max_steps_per_episode: 1000 # Max moves per game episode during training
 save_model_freq: 100 # Episodes
-eval_freq: 10000 # Episodes (how often to run an evaluation game with rendering/screenshot)
+eval_freq: 100000 # Episodes (how often to run an evaluation game with rendering/screenshot)
 eval_step_wait_ms: 1
 log_freq: 100 # Episodes (how often to print training stats)
 
@@ -78,7 +78,7 @@ tetris_reward_bonus: 400 # Bonus for clearing 4 lines at once
 # --- T-Spin Specific Rewards ---
 # These are crucial for teaching the AI the value of T-Spins
 tspin_reward: 400          # Base reward for any successful T-Spin
-tspin_mini_reward: 100     # T-Spin Mini (no lines)
+tspin_mini_reward: 30     # T-Spin Mini (no lines)
 tspin_single_reward: 800   # T-Spin Single
 tspin_double_reward: 1200  # T-Spin Double (very high value)
 tspin_triple_reward: 1600  # T-Spin Triple (ultimate goal)
