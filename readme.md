@@ -10,6 +10,8 @@ The project features a complete training and evaluation framework, including det
 [DEMO]
 (ai_playback_ep18800_20250607_233308.mp4)
 
+
+
 ## Key Features
 
 -   **Expert Strategy Goal**: AI is specifically trained to learn the `s2w` (Side 2-Wide well) combo strategy.
@@ -98,3 +100,56 @@ Run the project from your terminal using `main.py` with the `--mode` flag.
 3.  **Fine-Tuning (Post-Convergence)**: Once performance has plateaued, experiment with reducing the `learning_rate` to allow for final, fine-grained optimization of the policy.
 4.  **Strategic Analysis**: Use the `analyze` mode and recorded videos to perform a deep qualitative analysis of the AI's high-level strategy, identifying any remaining subtle flaws or potential areas for improvement.
 5.  **Future Experiments (Optional)**: After the current model is finalized, use it as a baseline to explore new challenges, such as teaching it different strategies (e.g., T-Spins) with a redesigned reward function or testing its robustness in environments with increasing speed.
+
+
+
+
+-----
+
+## 🧠 Interactive Neural Network Visualizations
+
+To better understand the inner workings of our DQN agent, we've created two interactive visualization scripts using Pygame. These scripts demystify the core concepts of **forward propagation** (how the AI makes a decision) and **backward propagation** (how the AI learns from its mistakes) in a simplified neural network.
+
+### Forward Pass: From Features to Q-Value
+
+This visualization demonstrates how the network processes a set of input features (like board height, number of holes, etc.) to produce a single output Q-value, which represents the quality of a potential move.
+
+**Key Concepts Demonstrated:**
+
+  * **Step-by-Step Calculation:** Press `[SPACE]` to advance one step at a time, watching each neuron's activation value get computed.
+  * **Weighted Sum & Bias:** The formula at the bottom of the screen shows how inputs from the previous layer are multiplied by their corresponding weights.
+  * **Activation Function:** See the result of the calculation before and after the **ReLU** activation function is applied.
+  * **Data Flow:** Visually trace the flow of information from the input layer, through the hidden layers, to the final output.
+
+-----
+
+## 🧠 Interactive Neural Network Visualizations
+
+These Pygame scripts offer a step-by-step, interactive visualization of the neural network's core processes. They are designed to provide an intuitive understanding of how the AI model works, from decision-making to learning.
+
+### Forward Pass: From Features to Q-Value
+
+This script demonstrates how a set of input features are processed layer-by-layer to compute a final Q-Value. As shown in the screenshot below, you can advance the calculation step-by-step to see how each neuron's activation is derived from the previous layer's values and its connecting weights.
+![Forward Pass Visualization](forward_pass.png)
+
+### Backward Pass: Learning from Mistakes
+
+This script visualizes the backpropagation algorithm. Starting from a final `Loss`, it shows how the error signal is propagated backward to update the network's weights. The visualization below highlights the accumulation of error at each neuron and the subsequent weight updates, illustrating how the network "learns" from its prediction errors.
+![Backward Pass Visualization](backward_pass.png)
+
+### How to Run
+
+**1. Execute the scripts:**
+
+```bash
+# To run the forward pass visualization
+python visualize_forward_pass_stepwise.py
+
+# To run the backward pass visualization
+python visualize_backward_pass_stepwise.py
+```
+
+**2. Controls:**
+
+  * **`[SPACE]`**: Advance the animation by a single step.
+  * **`[R]`**: Reset the animation with a new set of random weights.
