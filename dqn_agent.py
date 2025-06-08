@@ -83,6 +83,28 @@ class DQNAgent:
                 chosen_action_index = np.argmax(q_values)
                 return chosen_action_index, possible_moves_features_list[chosen_action_index]
 
+    def get_best_action_and_value(self, possible_moves_features_list):
+        """
+        Evaluates all possible moves and returns the best action and its V-value.
+        This uses the policy_net for decision-making.
+        """
+        if not possible_moves_features_list:
+            # Return a very low value if no moves are possible
+            return None, -float('inf') 
+            
+        with torch.no_grad():
+            # Create a batch of feature tensors for efficient evaluation
+            feature_tensors = torch.FloatTensor(np.array([move_data[1] for move_data in possible_moves_features_list])).to(self.device)
+            
+            # Get all Q-values from the policy network in a single pass
+            q_values = self.policy_net(feature_tensors).squeeze().cpu().numpy()
+            
+            # Find the index of the best action
+            best_idx = np.argmax(q_values)
+            
+            return possible_moves_features_list[best_idx], q_values[best_idx]
+
+
     def remember(self, state_features, action_index, reward, next_best_q_value, done):
         self.memory.append((state_features, reward, next_best_q_value, done))
 

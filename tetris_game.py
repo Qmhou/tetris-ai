@@ -282,22 +282,24 @@ class TetrisGame:
         # 返回所有计算出的指标
         return y_max_board, num_covered_holes, num_generalized_wells, bumpiness_value
 
-    # tetris_game.py (class TetrisGame)
-
-# tetris_game.py (class TetrisGame)
-
-    def get_all_possible_next_states_and_features(self):
+    def get_all_possible_next_states_and_features(self, for_piece=None):
         """
-        [优化版] 枚举所有可能的落子位置，并为每个“独一无二”的最终盘面
-        计算一个经过缩放的、包含7个特征的状态向量。
+        [支持Hold决策的优化版]
+        Enumerates all possible placements for a GIVEN piece and calculates the scaled 7-feature state vector for each unique resulting board.
+        If for_piece is None, it defaults to the game's current_piece.
         """
-        if not self.current_piece or self.game_over:
+        if for_piece is None:
+            piece_to_eval = self.current_piece
+        else:
+            piece_to_eval = for_piece
+
+        if not piece_to_eval or self.game_over:
             return []
 
         possible_placements = []
-        visited_grid_hashes = set() # 用于存储已评估过的盘面哈希值
+        visited_grid_hashes = set()
 
-        piece_type = self.current_piece.type
+        piece_type = piece_to_eval.type
         num_rotations = len(TETROMINOES[piece_type])
         current_combo_count = self.combo_count
 
@@ -307,31 +309,35 @@ class TetrisGame:
             max_dx = max(c[1] for c in test_piece_shape_coords)
 
             for start_x_col in range(-min_dx, self.board_width - max_dx):
+                # We need to create a temporary piece object for simulation
+                # Its initial y position must be high enough to not collide
                 sim_piece = Piece(start_x_col, 0, piece_type, rot_idx) 
 
+                # Adjust spawn y-position to be valid before dropping
                 if not self._is_valid_position(sim_piece.shape_coords, sim_piece.x, 0, self.grid):
                     if not self._is_valid_position(sim_piece.shape_coords, sim_piece.x, 1, self.grid):
                         continue 
                     else:
                         sim_piece.y = 1
                 
+                # Simulate hard drop to find final y
                 final_y = sim_piece.y
                 while self._is_valid_position(sim_piece.shape_coords, sim_piece.x, final_y + 1, self.grid):
                     final_y += 1
                 
                 sim_piece.y = final_y
 
+                # Place the piece and clear lines on a temporary grid
                 temp_grid_after_placement = self._place_piece_on_grid(sim_piece, self.grid)
                 temp_grid_after_lines_cleared, completed_lines_count = self._simulate_line_clear(temp_grid_after_placement)
 
-                # 将最终盘面转换为可哈希的元组，并进行去重检查
+                # Deduplicate based on the final board state
                 grid_hash = tuple(map(tuple, temp_grid_after_lines_cleared))
                 if grid_hash in visited_grid_hashes:
-                    continue # 如果这个盘面状态已经评估过，则跳过
-                
+                    continue
                 visited_grid_hashes.add(grid_hash)
 
-                # --- 后续的特征计算和缩放逻辑保持不变 ---
+                # --- Calculate all 7 features for the resulting board state ---
                 if completed_lines_count > 0:
                     resulting_combo_count = current_combo_count + 1
                 else:
@@ -344,6 +350,7 @@ class TetrisGame:
 
                 height, holes, generalized_wells, bumpiness = self._calculate_grid_metrics(temp_grid_after_lines_cleared)
                 
+                # Scale features
                 scaled_height = min(height, self.scaling_factors['max_height']) / self.scaling_factors['max_height']
                 scaled_holes = min(holes, self.scaling_factors['max_holes']) / self.scaling_factors['max_holes']
                 scaled_generalized_wells = min(generalized_wells, self.scaling_factors['max_generalized_wells']) / self.scaling_factors['max_generalized_wells']
