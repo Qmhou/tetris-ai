@@ -113,18 +113,22 @@ class TetrisGame:
         return self.piece_bag.pop(0)
 
     def _spawn_new_piece(self):
-        """生成新的当前方块和下一个方块。"""
-        if self.next_piece is None: # 游戏开始时的第一块
-            piece_type1 = self._get_piece_from_bag()
-            self.current_piece = Piece(INITIAL_POSITIONS[piece_type1][0], INITIAL_POSITIONS[piece_type1][1], piece_type1)
-        else:
-            self.current_piece = self.next_piece
+            """生成新的当前方块和下一个方块。"""
+            if self.next_piece is None:
+                # 仅在游戏第一块时执行
+                piece_type1 = self._get_piece_from_bag()
+                self.current_piece = Piece(INITIAL_POSITIONS[piece_type1][0], INITIAL_POSITIONS[piece_type1][1], piece_type1)
+            else:
+                # 正常流程：Next方块成为Current方块
+                self.current_piece = self.next_piece
 
-        piece_type2 = self._get_piece_from_bag()
-        self.next_piece = Piece(INITIAL_POSITIONS[piece_type2][0], INITIAL_POSITIONS[piece_type2][1], piece_type2)
+            # 从方块袋中为Next方块抽取一个新类型
+            piece_type2 = self._get_piece_from_bag()
+            self.next_piece = Piece(INITIAL_POSITIONS[piece_type2][0], INITIAL_POSITIONS[piece_type2][1], piece_type2)
 
-        if not self._is_valid_position(self.current_piece.shape_coords, self.current_piece.x, self.current_piece.y):
-            self.game_over = True
+            # 检查新生成的方块是否有效，否则游戏结束
+            if not self._is_valid_position(self.current_piece.shape_coords, self.current_piece.x, self.current_piece.y):
+                self.game_over = True
 
     def _is_valid_position(self, shape_coords, piece_x, piece_y, grid_to_check=None):
         """检查给定形状和位置是否有效（未出界且未与现有方块碰撞）。"""
@@ -144,10 +148,7 @@ class TetrisGame:
             if 0 <= r < self.board_height and 0 <= c < self.board_width:
                  new_grid[r][c] = piece_color_val
         return new_grid
-
-# tetris_game.py (class TetrisGame)
-
-# tetris_game.py (class TetrisGame)
+    
 
     def _lock_piece(self):
         old_score = self.score
@@ -281,22 +282,24 @@ class TetrisGame:
         # 返回所有计算出的指标
         return y_max_board, num_covered_holes, num_generalized_wells, bumpiness_value
 
-    # tetris_game.py (class TetrisGame)
-
-# tetris_game.py (class TetrisGame)
-
-    def get_all_possible_next_states_and_features(self):
+    def get_all_possible_next_states_and_features(self, for_piece=None):
         """
-        [优化版] 枚举所有可能的落子位置，并为每个“独一无二”的最终盘面
-        计算一个经过缩放的、包含7个特征的状态向量。
+        [支持Hold决策的优化版]
+        Enumerates all possible placements for a GIVEN piece and calculates the scaled 7-feature state vector for each unique resulting board.
+        If for_piece is None, it defaults to the game's current_piece.
         """
-        if not self.current_piece or self.game_over:
+        if for_piece is None:
+            piece_to_eval = self.current_piece
+        else:
+            piece_to_eval = for_piece
+
+        if not piece_to_eval or self.game_over:
             return []
 
         possible_placements = []
-        visited_grid_hashes = set() # 用于存储已评估过的盘面哈希值
+        visited_grid_hashes = set()
 
-        piece_type = self.current_piece.type
+        piece_type = piece_to_eval.type
         num_rotations = len(TETROMINOES[piece_type])
         current_combo_count = self.combo_count
 
@@ -306,31 +309,35 @@ class TetrisGame:
             max_dx = max(c[1] for c in test_piece_shape_coords)
 
             for start_x_col in range(-min_dx, self.board_width - max_dx):
+                # We need to create a temporary piece object for simulation
+                # Its initial y position must be high enough to not collide
                 sim_piece = Piece(start_x_col, 0, piece_type, rot_idx) 
 
+                # Adjust spawn y-position to be valid before dropping
                 if not self._is_valid_position(sim_piece.shape_coords, sim_piece.x, 0, self.grid):
                     if not self._is_valid_position(sim_piece.shape_coords, sim_piece.x, 1, self.grid):
                         continue 
                     else:
                         sim_piece.y = 1
                 
+                # Simulate hard drop to find final y
                 final_y = sim_piece.y
                 while self._is_valid_position(sim_piece.shape_coords, sim_piece.x, final_y + 1, self.grid):
                     final_y += 1
                 
                 sim_piece.y = final_y
 
+                # Place the piece and clear lines on a temporary grid
                 temp_grid_after_placement = self._place_piece_on_grid(sim_piece, self.grid)
                 temp_grid_after_lines_cleared, completed_lines_count = self._simulate_line_clear(temp_grid_after_placement)
 
-                # 将最终盘面转换为可哈希的元组，并进行去重检查
+                # Deduplicate based on the final board state
                 grid_hash = tuple(map(tuple, temp_grid_after_lines_cleared))
                 if grid_hash in visited_grid_hashes:
-                    continue # 如果这个盘面状态已经评估过，则跳过
-                
+                    continue
                 visited_grid_hashes.add(grid_hash)
 
-                # --- 后续的特征计算和缩放逻辑保持不变 ---
+                # --- Calculate all 7 features for the resulting board state ---
                 if completed_lines_count > 0:
                     resulting_combo_count = current_combo_count + 1
                 else:
@@ -343,6 +350,7 @@ class TetrisGame:
 
                 height, holes, generalized_wells, bumpiness = self._calculate_grid_metrics(temp_grid_after_lines_cleared)
                 
+                # Scale features
                 scaled_height = min(height, self.scaling_factors['max_height']) / self.scaling_factors['max_height']
                 scaled_holes = min(holes, self.scaling_factors['max_holes']) / self.scaling_factors['max_holes']
                 scaled_generalized_wells = min(generalized_wells, self.scaling_factors['max_generalized_wells']) / self.scaling_factors['max_generalized_wells']
@@ -361,6 +369,57 @@ class TetrisGame:
                 possible_placements.append((action_info, scaled_features_vector))
         
         return possible_placements
+
+# tetris_game.py (class TetrisGame)
+
+    def _hold_piece(self):
+        """
+        [调试版] 执行Hold操作，并打印详细的执行流程日志。
+        """
+        print("\n[DEBUG] Hold动作被触发。")
+
+        if not self.can_hold:
+            print("[DEBUG] Hold失败：因为 self.can_hold 当前是 False。请先锁定一个方块再尝试。")
+            return
+
+        print("[DEBUG] Hold检查通过 (self.can_hold is True)，准备执行Hold操作。")
+        original_current_piece_type = self.current_piece.type if self.current_piece else "None"
+        print(f"[DEBUG] 当前操作的方块是: {original_current_piece_type}")
+
+        if self.held_piece is None:
+            # --- 情况1：Hold区为空 ---
+            print("[DEBUG] 检测到Hold区为空。")
+            self.held_piece = Piece(0, 0, original_current_piece_type, 0) 
+            print(f"[DEBUG] 状态更新：self.held_piece 已被设置为 '{self.held_piece.type}'。")
+            
+            print("[DEBUG] 正在调用 _spawn_new_piece() 以获取下一个方块...")
+            self._spawn_new_piece()
+            new_current_piece_type = self.current_piece.type if self.current_piece else "None"
+            print(f"[DEBUG] 状态更新：新的 self.current_piece 已变为 '{new_current_piece_type}'。")
+        else:
+            # --- 情况2：Hold区有方块，进行交换 ---
+            held_piece_type_before_swap = self.held_piece.type
+            print(f"[DEBUG] 检测到Hold区不为空，持有的是'{held_piece_type_before_swap}'。准备交换。")
+            
+            # 1. 将当前方块的类型放入Hold区
+            self.held_piece = Piece(0, 0, original_current_piece_type, 0)
+            print(f"[DEBUG] 状态更新：self.held_piece 已被设置为 '{self.held_piece.type}'。")
+
+            # 2. 从之前暂存的类型，创建新的当前方块
+            self.current_piece = Piece(
+                INITIAL_POSITIONS[held_piece_type_before_swap][0],
+                INITIAL_POSITIONS[held_piece_type_before_swap][1],
+                held_piece_type_before_swap
+            )
+            print(f"[DEBUG] 状态更新：新的 self.current_piece 已变为 '{self.current_piece.type}'。")
+            
+            if not self._is_valid_position(self.current_piece.shape_coords, self.current_piece.x, self.current_piece.y):
+                self.game_over = True
+                print("[DEBUG] 警告：交换后新方块位置不合法，游戏结束。")
+        
+        # 将开关设为False
+        self.can_hold = False
+        print("[DEBUG] 操作完成，self.can_hold 已被设置为 False。")
 
     def _simulate_line_clear(self, grid_to_modify):
         grid_copy = [row[:] for row in grid_to_modify]
@@ -565,47 +624,38 @@ class TetrisGame:
             except pygame.error as e:
                 print(f"保存截图至 {path} 时发生错误: {e}")
 
+# tetris_game.py (class TetrisGame)
+
     def execute_atomic_action(self, action_string):
         """
-        执行一个原子的、单步的动作（供AI回放模式调用）。
-
-        Args:
-            action_string (str): 一个描述动作的字符串，如 'left', 'rotate_cw' 等。
+        [健壮版] 执行一个原子的、单步的动作，并处理未知输入。
         """
         if self.game_over or not self.current_piece:
-            return # 如果游戏结束或没有方块，则不执行任何操作
-
-        moved_or_rotated = False
+            return
 
         if action_string == 'left':
             if self._is_valid_position(self.current_piece.shape_coords, self.current_piece.x - 1, self.current_piece.y):
                 self.current_piece.x -= 1
-                moved_or_rotated = True
         elif action_string == 'right':
             if self._is_valid_position(self.current_piece.shape_coords, self.current_piece.x + 1, self.current_piece.y):
                 self.current_piece.x += 1
-                moved_or_rotated = True
         elif action_string == 'rotate_cw':
-            # Piece类的rotate方法会处理SRS并返回是否成功
-            if self.current_piece.rotate(1, self.board_width, self.board_height, lambda s,x,y: self._is_valid_position(s,x,y,self.grid)):
-                moved_or_rotated = True
+            if hasattr(self.current_piece, 'rotate'):
+                self.current_piece.rotate(1, self.board_width, self.board_height, lambda s,x,y: self._is_valid_position(s,x,y,self.grid))
         elif action_string == 'rotate_ccw':
-            if self.current_piece.rotate(-1, self.board_width, self.board_height, lambda s,x,y: self._is_valid_position(s,x,y,self.grid)):
-                 moved_or_rotated = True
+            if hasattr(self.current_piece, 'rotate'):
+                self.current_piece.rotate(-1, self.board_width, self.board_height, lambda s,x,y: self._is_valid_position(s,x,y,self.grid))
         elif action_string == 'soft_drop':
-            # 尝试向下移动一格，如果失败则锁定
             if self._is_valid_position(self.current_piece.shape_coords, self.current_piece.x, self.current_piece.y + 1):
                 self.current_piece.y += 1
             else:
                 self._lock_piece()
         elif action_string == 'hard_drop':
-            # 持续向下移动直到碰撞，然后锁定
             while self._is_valid_position(self.current_piece.shape_coords, self.current_piece.x, self.current_piece.y + 1):
                 self.current_piece.y += 1
             self._lock_piece()
         elif action_string == 'hold':
             self._hold_piece()
-            moved_or_rotated = True
-
-        # 注意：此处不包含自动锁定逻辑（除非是soft_drop失败或hard_drop）。
-        # 自动下落的“重力”由main.py中的计时器驱动，它会定时调用 'soft_drop' 动作。
+        else:
+            # << 新增：处理所有未知的操作字符串
+            print(f"警告: execute_atomic_action 接收到未知操作 '{action_string}'")

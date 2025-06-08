@@ -22,85 +22,84 @@ def load_config(config_path='config.yaml'):
         return yaml.safe_load(f)
 
 def manual_mode(config):
-    """[修正版] 运行手动游戏模式，使用 execute_atomic_action。"""
-    if not pygame.get_init(): pygame.init()
+    """[最终修正版] 运行手动游戏/调试模式，具有稳健的输入处理。"""
+    if not pygame.get_init():
+        pygame.init()
     
-    # 同样，可以将调试模式的代码放入这里来测试旋转
-    # 为此，您可能需要修改 Piece.rotate 方法以包含打印语句
     game = TetrisGame(config, render_mode=True)
     game.reset()
     
     print("\n--- 进入手动/调试模式 ---")
-    print("使用方向键移动，上箭头/X键顺时针旋转，Z键逆时针旋转。")
-    print("按N键生成下一个方块，按ESC键退出。")
+    print("方向键:移动 | 上/X:顺时针 | Z:逆时针 | 空格:硬降 | C/Shift:暂存 | N:下一块 | R:重开 | ESC:退出")
 
     running = True
-    fall_time = 0
-    fall_speed = 500  # ms, 方块自动下落的间隔
+    fall_timer = 0
+    fall_speed = 500  # ms
+    clock = pygame.time.Clock()
 
-    # 定义按键到动作字符串的映射
+    # --- 完整的、统一的按键到动作的映射 ---
     key_to_action_map = {
         pygame.K_LEFT: 'left',
         pygame.K_RIGHT: 'right',
         pygame.K_DOWN: 'soft_drop',
         pygame.K_SPACE: 'hard_drop',
         pygame.K_UP: 'rotate_cw',
-        pygame.K_x: 'rotate_cw', # 兼容另一种常见旋转键
+        pygame.K_x: 'rotate_cw',
         pygame.K_z: 'rotate_ccw',
         pygame.K_c: 'hold',
         pygame.K_LSHIFT: 'hold',
         pygame.K_RSHIFT: 'hold'
     }
 
-    clock = pygame.time.Clock()
-
     while running:
-        # 渲染永远在循环的末尾，以绘制最新状态
-        # game.render() 
-
         dt = clock.tick(config.get('fps', 30))
 
-        # 事件处理
+        # --- 稳健的事件处理循环 ---
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+                continue
+
             if event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     running = False
+                    continue
                 
-                if game.game_over and event.key == pygame.K_r:
-                    game.reset()
-                
-                # 手动生成下一个方块用于测试
-                if event.key == pygame.K_n:
-                    game._spawn_new_piece()
+                if game.game_over:
+                    if event.key == pygame.K_r:
+                        game.reset()
+                        fall_timer = 0
+                    continue # 游戏结束时，只响应R键，忽略所有其他按键
 
-                # 将按键映射到动作并执行
-                if not game.game_over and event.key in key_to_action_map:
+                # 游戏进行中的按键处理
+                if event.key == pygame.K_n:
+                    game._spawn_new_piece() # 调试用
+                elif event.key in key_to_action_map:
                     action = key_to_action_map[event.key]
-                    # 如果是旋转动作，可以在此加入调试打印
-                    if 'rotate' in action:
-                        print(f"\n[调试] 尝试执行动作: {action}")
                     game.execute_atomic_action(action)
-        
+                # 对于其他所有未在map中定义的按键，将在此被安全地忽略
+
         # 处理重力自动下落
         if not game.game_over:
-            fall_time += dt
-            if fall_time >= fall_speed:
-                fall_time = 0
+            fall_timer += dt
+            if fall_timer >= fall_speed:
+                fall_timer = 0
                 game.execute_atomic_action('soft_drop')
         
-        # 在所有逻辑更新后，进行一次渲染
         game.render()
 
     if pygame.get_init():
         pygame.quit()
 
 def ai_play_mode(config, model_path):
-    """运行AI自动游戏模式，并根据配置增加录制和时长限制功能。"""
+    """
+    [最终重构版] 运行AI自动游戏模式，实现带Hold决策的分支评估逻辑。
+    支持可视化回放和即时放置两种模式。
+    """
     if not pygame.get_init():
         pygame.init()
 
+    # --- 初始化游戏和AI代理 ---
     game = TetrisGame(config, render_mode=True)
     agent = DQNAgent(
         input_dims=config['input_dims'],
@@ -116,7 +115,7 @@ def ai_play_mode(config, model_path):
         if pygame.get_init(): pygame.quit()
         return
 
-    # --- 从config加载回放和录制参数 ---
+    # --- 加载配置参数 ---
     playback_config = config.get('ai_playback', {})
     playback_enabled = playback_config.get('enabled', True)
     move_delay = playback_config.get('move_delay_ms', 30)
@@ -130,18 +129,15 @@ def ai_play_mode(config, model_path):
     if record_enabled and record_duration_seconds > 0:
         max_frames_to_capture = record_duration_seconds * output_fps
 
-    # --- 游戏主循环 ---
+    # --- 游戏主循环初始化 ---
     game.reset()
     running = True
-    
     op_sequence = [] 
-    fall_timer = 0
     clock = pygame.time.Clock()
-    
     frames_for_recording = []
     frame_counter = 0
 
-    print("AI回放模式已启动。按ESC键退出。")
+    print("AI回放模式已启动 (支持Hold决策)。按ESC键退出。")
     if record_enabled:
         print(f"游戏录制已启用。格式: {record_config.get('output_format', 'gif').upper()}")
         if record_duration_seconds > 0:
@@ -150,58 +146,96 @@ def ai_play_mode(config, model_path):
     while running:
         dt = clock.tick(config.get('fps', 30))
         
-        # --- 修正后的事件处理循环 ---
+        # --- 事件处理循环 ---
         for event in pygame.event.get():
-            if event.type == pygame.QUIT:
+            if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
                 running = False
-            
-            # 首先，只处理键盘按下的事件
-            if event.type == pygame.KEYDOWN:
-                # 在这个代码块内，访问 event.key 是安全的
-                if event.key == pygame.K_ESCAPE:
-                    running = False
-                
-                # 只有在游戏结束后，R键才起作用
-                if game.game_over and event.key == pygame.K_r:
-                    game.reset()
-                    op_sequence = []
-                    frames_for_recording = []
-                    frame_counter = 0
+            if game.game_over and event.type == pygame.KEYDOWN and event.key == pygame.K_r:
+                game.reset()
+                op_sequence = []
+                frames_for_recording = []
+                frame_counter = 0
 
-        # --- 游戏逻辑部分 (保持不变) ---
+        # --- 录制结束逻辑 ---
         if record_enabled and max_frames_to_capture > 0 and len(frames_for_recording) >= max_frames_to_capture:
             print(f"已捕获足够帧数以生成 {record_duration_seconds} 秒的视频，正在结束游戏...")
-            game.game_over = True 
-            running = False 
+            game.game_over = True
+            running = False
 
         if not game.game_over:
+            # 当上一组操作序列执行完毕后，或在即时模式下，进行新一轮决策
             if not op_sequence:
-                possible_moves = game.get_all_possible_next_states_and_features()
-                if possible_moves:
-                    _, chosen_move_data = agent.select_action(possible_moves, is_eval_mode=True)
-                    if chosen_move_data:
-                        if playback_enabled:
-                            op_sequence = generate_move_sequence(game.current_piece, chosen_move_data[0])
-                        else:
-                            game.apply_ai_chosen_action(chosen_move_data[0])
-                            pygame.time.wait(fall_interval) 
-                else: game.game_over = True
-            
-            if op_sequence:
+                
+                # ====================================================================
+                # ============== 核心决策逻辑: 两分支评估 (Hold vs No-Hold) ==============
+                # ====================================================================
+                
+                decision_is_to_hold = False
+                best_action_info_no_hold = None
+
+                # --- 步骤 1: 检查是否可以执行Hold ---
+                if not game.can_hold:
+                    # Case 1: Cannot hold, no choice to make. The decision is forced to "No-Hold".
+                    decision_is_to_hold = False
+                    # We still need to find the best move for the current piece
+                    moves_no_hold = game.get_all_possible_next_states_and_features(for_piece=game.current_piece)
+                    best_action_no_hold, v_no_hold = agent.get_best_action_and_value(moves_no_hold)
+                    if best_action_no_hold:
+                        best_action_info_no_hold = best_action_no_hold[0]
+                else:
+                    # Case 2: Can hold, perform the full two-branch evaluation.
+                    
+                    # --- 分支 A: 评估 "No-Hold" (使用当前方块) ---
+                    moves_no_hold = game.get_all_possible_next_states_and_features(for_piece=game.current_piece)
+                    best_action_no_hold, v_no_hold = agent.get_best_action_and_value(moves_no_hold)
+                    
+                    if best_action_no_hold:
+                         best_action_info_no_hold = best_action_no_hold[0] # Extract the (type, rot, x, y) tuple
+
+                    # --- 分支 B: 评估 "Hold" (使用 next_piece 或 held_piece) ---
+                    piece_for_hold_branch = game.next_piece if game.held_piece is None else game.held_piece
+                    moves_hold = game.get_all_possible_next_states_and_features(for_piece=piece_for_hold_branch)
+                    _best_action_hold, v_hold_branch = agent.get_best_action_and_value(moves_hold)
+
+                    # --- 最终决策对比 ---
+                    if v_hold_branch > v_no_hold:
+                        decision_is_to_hold = True
+                
+                # ====================================================================
+                # ==================== 决策结束，准备执行或生成序列 =====================
+                # ====================================================================
+                
+                if playback_enabled:
+                    # 模式 1: 为可视化回放生成操作指令序列 ("菜谱")
+                    if decision_is_to_hold:
+                        op_sequence = ['hold']
+                    elif best_action_info_no_hold:
+                        op_sequence = generate_move_sequence(game.current_piece, best_action_info_no_hold)
+                    else: # No possible moves found
+                        game.game_over = True
+                else:
+                    # 模式 2: 即时应用决策 (无动画)
+                    if decision_is_to_hold:
+                        game.execute_atomic_action('hold')
+                    elif best_action_info_no_hold:
+                        game.apply_ai_chosen_action(best_action_info_no_hold)
+                    else: # No possible moves found
+                        game.game_over = True
+                    # 在即时模式下增加一个延迟，以便观察
+                    pygame.time.wait(fall_interval) 
+
+            # --- 可视化回放的序列执行 (如果启用) ---
+            if playback_enabled and op_sequence:
                 next_op = op_sequence.pop(0)
                 game.execute_atomic_action(next_op) 
-                if next_op != 'hard_drop': pygame.time.wait(move_delay)
-            
-            if playback_enabled and not op_sequence:
-                fall_timer += dt
-                if fall_timer >= fall_interval:
-                    fall_timer = 0
-                    game.execute_atomic_action('soft_drop')
+                if next_op not in ['hard_drop', 'hold']: 
+                    pygame.time.wait(move_delay)
 
         game.render() 
 
+        # --- 录制帧画面 ---
         if record_enabled and not game.game_over:
-            capture_interval = record_config.get('capture_interval', 4)
+            capture_interval = record_config.get('capture_interval', 2) # Adjusted for smoother recording
             frame_counter += 1
             if frame_counter % capture_interval == 0:
                 frame_data = pygame.surfarray.array3d(game.screen)
@@ -211,17 +245,11 @@ def ai_play_mode(config, model_path):
                     print(f"已捕获足够帧数以生成 {record_duration_seconds} 秒的视频，正在结束游戏...")
                     running = False 
 
-    # --- 游戏循环结束后，保存回放文件 (逻辑保持不变) ---
+    # --- 游戏循环结束后，保存回放文件 ---
     if record_enabled and frames_for_recording:
-        # ... (这部分保存文件的代码无需修改) ...
-        # ...
-        pass # 此处应为完整的保存逻辑
-        output_format = record_config.get('output_format', 'gif').lower()
-        output_fps = record_config.get('output_fps', 15)
-        
-        print(f"\n正在保存游戏回放为 {output_format.upper()}...")
+        print(f"\n正在保存游戏回放为 {record_config.get('output_format', 'gif').upper()}...")
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        file_extension = ".mp4" if output_format == "mp4" else ".gif"
+        file_extension = ".mp4" if record_config.get('output_format', 'gif') == "mp4" else ".gif"
         filename = f"ai_playback_ep{loaded_at_episode-1}_{timestamp}{file_extension}"
         
         save_dir = "replays"
@@ -229,7 +257,7 @@ def ai_play_mode(config, model_path):
         save_path = os.path.join(save_dir, filename)
 
         try:
-            if output_format == 'mp4':
+            if record_config.get('output_format', 'gif') == 'mp4':
                 imageio.mimsave(save_path, frames_for_recording, fps=output_fps, macro_block_size=1, quality=8)
             else:
                 imageio.mimsave(save_path, frames_for_recording, fps=output_fps)
@@ -237,11 +265,8 @@ def ai_play_mode(config, model_path):
         except Exception as e:
             print(f"保存回放时发生错误: {e}")
 
-
     if pygame.get_init():
         pygame.quit()
-
-# main.py
 
 def analyze_mode(config, model_path):
     """
