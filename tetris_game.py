@@ -5,7 +5,7 @@ import pygame
 import numpy as np
 import random
 import os
-
+import torch
 # 假设 tetrominoes.py 包含:
 # PIECE_TYPES, COLORS, TETROMINOES (形状), INITIAL_POSITIONS,
 # GHOST_COLOR (例如 (100, 100, 100, 128)), EMPTY_COLOR, GRID_LINE_COLOR,
@@ -151,79 +151,52 @@ class TetrisGame:
     
 
     def _lock_piece(self):
-        old_score = self.score
+        """
+        [CNN+T-Spin Version] Locks the piece, detects T-Spins, and calculates
+        a reward based on the new T-Spin-focused reward system.
+        """
         
-        # 步骤 1: 锁定方块到网格
-        piece_color_val = PIECE_TYPES.index(self.current_piece.type) + 1
-        for r_offset, c_offset in self.current_piece.shape_coords:
-            r, c = self.current_piece.y + r_offset, self.current_piece.x + c_offset
-            if 0 <= r < self.board_height and 0 <= c < self.board_width:
-                self.grid[r][c] = piece_color_val
+        # --- 步骤 1: T-Spin 检测 ---
+        # Must be done BEFORE placing the piece, using its final position
+        # We need to know if the last move was a rotation, this requires tracking state
+        # For simplicity, we'll use the robust 3-corner geometric check
+        is_tspin = self._check_tspin_conditions(self.current_piece, self.grid)
 
-        # 步骤 2: 清行并更新连击计数
-        lines_cleared_this_turn = self._clear_lines()
-        self.lines_cleared_total += lines_cleared_this_turn
+        # --- 步骤 2: 锁定方块到网格 ---
+        self.grid = self._place_piece_on_grid(self.current_piece, self.grid)
+
+        # --- 步骤 3: 消行和计分 ---
+        lines_cleared = self._clear_lines()
+        self.lines_cleared_total += lines_cleared
         
-        if lines_cleared_this_turn > 0:
-            self.combo_count += 1
-        else:
-            self.combo_count = 0
+        # --- 步骤 4: 计算奖励 (新的奖励逻辑) ---
+        reward = 0
+        score_change = 0 # You'd update self.score based on a new scoring system
 
-        # << 新增：更新最大连击数记录 >>
-        self.max_combo_this_game = max(self.max_combo_this_game, self.combo_count)
-        # --- 步骤 3: 实现新的计分逻辑 ---
-        # 计算基础消行得分
-        line_clear_score_this_turn = 0
-        if 0 <= lines_cleared_this_turn < len(self.clear_line_scores):
-            line_clear_score_this_turn = self.clear_line_scores[lines_cleared_this_turn]
-
-        # 计算连击得分
-        combo_score_this_turn = 0
-        if self.combo_count > 0:
-            # Combo从1开始，列表索引从0开始，所以用 self.combo_count - 1
-            # 使用 min 防止索引越界，实现 combo > 9 时都按最后的乘数计算
-            bonus_index = min(self.combo_count - 1, len(self.combo_multiplier_schedule) - 1)
-            bonus_multiplier = self.combo_multiplier_schedule[bonus_index]
-            combo_score_this_turn = self.combo_score_base * bonus_multiplier
-
-        # 更新总分
-        self.score += (line_clear_score_this_turn + combo_score_this_turn)
+        if is_tspin:
+            reward += self.config['tspin_reward']
+            if lines_cleared == 0:
+                reward += self.config['tspin_mini_reward']
+            elif lines_cleared == 1:
+                reward += self.config['tspin_single_reward']
+            elif lines_cleared == 2:
+                reward += self.config['tspin_double_reward']
+            elif lines_cleared == 3:
+                reward += self.config['tspin_triple_reward']
+        else: # Regular line clear
+            if lines_cleared > 0:
+                reward += lines_cleared * self.config['line_clear_reward']
+                if lines_cleared == 4:
+                    reward += self.config['tetris_reward_bonus']
         
-        self.can_hold = True # 锁定后可以再次使用Hold功能
-
-        # --- 步骤 4: 准备强化学习的奖励信号 ---
-        # "score_change" 现在自然地包含了消行和连击的所有得分
-        score_change = float(self.score - old_score)
-        
-        # 在“纯粹得分驱动”模式下，其他启发式奖惩可以设为0
-        # 但我们保留计算，以便未来灵活切换回“启发式”模式
-        current_max_height, current_holes_count, _, current_bumpiness = self._calculate_grid_metrics(self.grid) # 省略了广义井
-        well_occupancy_count = 0 # 井区占有惩罚计算...
-        # ...
-        
-        reward_components = {
-            "score_change": score_change, # 主要的正向奖励信号
-            "height_penalty": 0.0, # 在纯粹得分驱动模式下设为0
-            "hole_penalty": 0.0,   # 在纯粹得分驱动模式下设为0
-            "bumpiness_penalty": 0.0, # 在纯粹得分驱动模式下设为0
-            "well_occupancy_penalty": 0.0, # 在纯粹得分驱动模式下设为0
-            "lines_reward": 0.0,   # 移除，因为价值已体现在score_change中
-            "combo_reward": 0.0,   # 移除，因为价值已体现在score_change中
-            "game_over_penalty": 0.0, 
-            "piece_drop_reward": 0.0 # 移除
-        }
-
+        # --- 步骤 5: 游戏结束判断和新方块 ---
         self._spawn_new_piece()
         is_terminal_step = self.game_over 
-
         if is_terminal_step:
-            reward_components["game_over_penalty"] = float(self.game_over_penalty_val)
+            reward += self.config['game_over_penalty']
         
-        # 最终的强化学习奖励 = 得分变化 + 游戏结束惩罚
-        final_reward_value = sum(reward_components.values())
-        reward_components["final_reward"] = final_reward_value
-        
-        return reward_components, is_terminal_step, lines_cleared_this_turn
+        # This structure is simplified. You would return a dictionary of reward components for logging.
+        return {"final_reward": reward}, is_terminal_step, lines_cleared
 
     def _clear_lines(self):
         lines_to_clear_indices = [r_idx for r_idx, row in enumerate(self.grid) if all(cell != 0 for cell in row)]
@@ -284,10 +257,10 @@ class TetrisGame:
 
     def get_all_possible_next_states_and_features(self, for_piece=None):
         """
-        [支持Hold决策的优化版]
-        Enumerates all possible placements for a GIVEN piece and calculates the scaled 7-feature state vector for each unique resulting board.
-        If for_piece is None, it defaults to the game's current_piece.
+        [CNN+T-Spin+Hold适配版] Finds all possible final placements for a GIVEN piece,
+        including T-Spins, and returns the resulting board state as a CNN-ready tensor.
         """
+        # Determine which piece to evaluate based on the provided argument
         if for_piece is None:
             piece_to_eval = self.current_piece
         else:
@@ -297,80 +270,50 @@ class TetrisGame:
             return []
 
         possible_placements = []
-        visited_grid_hashes = set()
-
-        piece_type = piece_to_eval.type
-        num_rotations = len(TETROMINOES[piece_type])
-        current_combo_count = self.combo_count
-
-        for rot_idx in range(num_rotations):
-            test_piece_shape_coords = TETROMINOES[piece_type][rot_idx]
-            min_dx = min(c[1] for c in test_piece_shape_coords)
-            max_dx = max(c[1] for c in test_piece_shape_coords)
-
-            for start_x_col in range(-min_dx, self.board_width - max_dx):
-                # We need to create a temporary piece object for simulation
-                # Its initial y position must be high enough to not collide
-                sim_piece = Piece(start_x_col, 0, piece_type, rot_idx) 
-
-                # Adjust spawn y-position to be valid before dropping
-                if not self._is_valid_position(sim_piece.shape_coords, sim_piece.x, 0, self.grid):
-                    if not self._is_valid_position(sim_piece.shape_coords, sim_piece.x, 1, self.grid):
-                        continue 
-                    else:
-                        sim_piece.y = 1
+        visited_hashes = set()
+        
+        piece = piece_to_eval
+        
+        # Iterate through all rotations for the given piece
+        for rot_idx in range(len(TETROMINOES[piece.type])):
+            # Create a temporary piece for simulation to get its shape
+            sim_piece = Piece(0, 0, piece.type, rot_idx)
+            
+            # Iterate through all possible columns (with some buffer for kicks)
+            for c in range(-2, self.board_width + 2):
+                sim_piece.x = c
                 
-                # Simulate hard drop to find final y
-                final_y = sim_piece.y
-                while self._is_valid_position(sim_piece.shape_coords, sim_piece.x, final_y + 1, self.grid):
-                    final_y += 1
-                
-                sim_piece.y = final_y
-
-                # Place the piece and clear lines on a temporary grid
-                temp_grid_after_placement = self._place_piece_on_grid(sim_piece, self.grid)
-                temp_grid_after_lines_cleared, completed_lines_count = self._simulate_line_clear(temp_grid_after_placement)
-
-                # Deduplicate based on the final board state
-                grid_hash = tuple(map(tuple, temp_grid_after_lines_cleared))
-                if grid_hash in visited_grid_hashes:
-                    continue
-                visited_grid_hashes.add(grid_hash)
-
-                # --- Calculate all 7 features for the resulting board state ---
-                if completed_lines_count > 0:
-                    resulting_combo_count = current_combo_count + 1
-                else:
-                    resulting_combo_count = 0
-
-                well_occupancy_count = 0
-                for r in range(self.board_height):
-                    if temp_grid_after_lines_cleared[r][self.board_width - 1] != 0: well_occupancy_count += 1
-                    if temp_grid_after_lines_cleared[r][self.board_width - 2] != 0: well_occupancy_count += 1
-
-                height, holes, generalized_wells, bumpiness = self._calculate_grid_metrics(temp_grid_after_lines_cleared)
-                
-                # Scale features
-                scaled_height = min(height, self.scaling_factors['max_height']) / self.scaling_factors['max_height']
-                scaled_holes = min(holes, self.scaling_factors['max_holes']) / self.scaling_factors['max_holes']
-                scaled_generalized_wells = min(generalized_wells, self.scaling_factors['max_generalized_wells']) / self.scaling_factors['max_generalized_wells']
-                scaled_bumpiness = min(bumpiness, self.scaling_factors['max_bumpiness']) / self.scaling_factors['max_bumpiness']
-                scaled_completed_lines = min(completed_lines_count, self.scaling_factors['max_completed_lines']) / self.scaling_factors['max_completed_lines']
-                scaled_resulting_combo = min(resulting_combo_count, self.scaling_factors['max_combo']) / self.scaling_factors['max_combo']
-                scaled_well_occupancy = min(well_occupancy_count, self.scaling_factors['max_well_occupancy']) / self.scaling_factors['max_well_occupancy']
-
-                scaled_features_vector = np.array([
-                    scaled_height, scaled_holes, scaled_generalized_wells, 
-                    scaled_bumpiness, scaled_completed_lines, scaled_resulting_combo,
-                    scaled_well_occupancy
-                ], dtype=np.float32)
-                
-                action_info = (piece_type, rot_idx, start_x_col, final_y)
-                possible_placements.append((action_info, scaled_features_vector))
+                # Search for valid final Y positions, including tucked positions
+                # This is an exhaustive search to find all possible placements
+                for r in range(-2, self.board_height):
+                    sim_piece.y = r
+                    
+                    # Check if the piece can be placed at this (x,y,rot)
+                    if self._is_valid_position(sim_piece.shape_coords, sim_piece.x, sim_piece.y, self.grid):
+                        
+                        # Check if this is a "final" resting spot (cannot move down further)
+                        if not self._is_valid_position(sim_piece.shape_coords, sim_piece.x, sim_piece.y + 1, self.grid):
+                            
+                            # Create the resulting grid state after placing the piece
+                            temp_grid = self._place_piece_on_grid(sim_piece, self.grid)
+                            
+                            # Use a hash of the grid to avoid duplicate evaluations
+                            grid_hash = tuple(map(tuple, temp_grid))
+                            if grid_hash not in visited_hashes:
+                                visited_hashes.add(grid_hash)
+                                
+                                # Get the absolute coordinates of the final piece for the CNN input
+                                final_piece_coords = [(sim_piece.y + ro, sim_piece.x + co) for ro, co in sim_piece.shape_coords]
+                                
+                                # Convert the resulting grid to the multi-channel tensor for the CNN
+                                cnn_input = self._convert_grid_to_cnn_input(temp_grid, final_piece_coords)
+                                
+                                # Store the action info and the resulting state tensor
+                                action_info = (piece.type, rot_idx, c, r)
+                                possible_placements.append((action_info, cnn_input))
         
         return possible_placements
 
-# tetris_game.py (class TetrisGame)
 
     def _hold_piece(self):
         """
@@ -624,7 +567,6 @@ class TetrisGame:
             except pygame.error as e:
                 print(f"保存截图至 {path} 时发生错误: {e}")
 
-# tetris_game.py (class TetrisGame)
 
     def execute_atomic_action(self, action_string):
         """
@@ -659,3 +601,67 @@ class TetrisGame:
         else:
             # << 新增：处理所有未知的操作字符串
             print(f"警告: execute_atomic_action 接收到未知操作 '{action_string}'")
+
+    def _check_tspin_conditions(self, piece, grid):
+        """
+        Checks if a T-piece placement meets the geometric conditions for a T-Spin.
+        This uses the 3-corner rule, which is a standard method.
+        """
+        if piece.type != 'T':
+            return False
+
+        # The four corners relative to the piece's pivot (x, y)
+        # These are the corners of the 3x3 bounding box of the T-piece
+        corners = [
+            (piece.y - 1, piece.x - 1), (piece.y - 1, piece.x + 1),
+            (piece.y + 1, piece.x - 1), (piece.y + 1, piece.x + 1)
+        ]
+        
+        occupied_corners = 0
+        for r, c in corners:
+            # Check if the corner is out of bounds or occupied by another block
+            if not (0 <= c < self.board_width and 0 <= r < self.board_height) or grid[r][c] != 0:
+                occupied_corners += 1
+        
+        # If 3 or more corners are occupied, it's a T-Spin setup
+        return occupied_corners >= 3
+
+    def _convert_grid_to_cnn_input(self, grid, current_piece_coords):
+        """
+        Converts the game grid into a multi-channel tensor for the CNN.
+        """
+        # Initialize channels
+        # Using numpy for faster manipulation
+        board_shape = (self.board_height, self.board_width)
+        filled_channel = np.zeros(board_shape, dtype=np.float32)
+        hole_channel = np.zeros(board_shape, dtype=np.float32)
+        height_channel = np.zeros(board_shape, dtype=np.float32)
+        placement_channel = np.zeros(board_shape, dtype=np.float32)
+
+        # Populate filled_channel and find holes
+        for c in range(self.board_width):
+            is_sky = True
+            for r in range(self.board_height):
+                if grid[r][c] != 0:
+                    filled_channel[r, c] = 1.0
+                    is_sky = False
+                elif not is_sky: # An empty cell below a filled cell
+                    hole_channel[r, c] = 1.0
+
+        # Populate height_channel
+        for c in range(self.board_width):
+            for r in range(self.board_height):
+                if filled_channel[r, c] == 1.0:
+                    height_channel[r:, c] = 1.0 # Fill from the highest block downwards
+                    break
+        
+        # Populate placement_channel
+        for r_offset, c_offset in current_piece_coords:
+            r, c = r_offset, c_offset
+            if 0 <= r < self.board_height and 0 <= c < self.board_width:
+                placement_channel[r, c] = 1.0
+
+        # Stack channels and convert to PyTorch tensor
+        # Note: No cropping here, can be done in network if desired
+        cnn_input = np.stack([filled_channel, hole_channel, height_channel, placement_channel], axis=0)
+        return torch.from_numpy(cnn_input).unsqueeze(0) # Add batch dimension

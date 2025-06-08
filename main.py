@@ -101,14 +101,15 @@ def ai_play_mode(config, model_path):
 
     # --- 初始化游戏和AI代理 ---
     game = TetrisGame(config, render_mode=True)
-    agent = DQNAgent(
-        input_dims=config['input_dims'],
-        hidden_dims=config.get('hidden_dims', config.get('nn_hidden_dims')),
-        output_dims=config['output_dims'],
-        lr=0, gamma=0, epsilon_start=0, epsilon_end=0, epsilon_decay_frames=0,
-        memory_size=1, batch_size=1, target_update_freq=9999999,
-        weights_dir=config['weights_dir']
-    )
+    # agent = DQNAgent(
+    #     input_dims=config['input_dims'],
+    #     hidden_dims=config.get('hidden_dims', config.get('nn_hidden_dims')),
+    #     output_dims=config['output_dims'],
+    #     lr=0, gamma=0, epsilon_start=0, epsilon_end=0, epsilon_decay_frames=0,
+    #     memory_size=1, batch_size=1, target_update_freq=9999999,
+    #     weights_dir=config['weights_dir']
+    # )
+    agent = DQNAgent(config)
     
     load_success, loaded_at_episode = agent.load_weights(model_path)
     if not load_success:

@@ -14,7 +14,7 @@ ai_playback:
   move_delay_ms: 1                # << 参数1: AI执行每次左/右/旋转动作后的延迟（毫秒）
   auto_fall_interval_ms: 500       # << 参数2: AI每隔多少毫秒自动下落一格
   record_game:
-    enabled: true
+    enabled: false
     output_format: "mp4"
     output_fps: 24
     capture_interval: 2
@@ -24,24 +24,21 @@ ai_playback:
 # Tetrominoes (colors will be defined in code)
 # Shapes are defined in tetrominoes.py
 
-# DQN Agent parameters
-input_dims: 7 # Number of features: height, holes, generalized_wells, smoothness
-#hidden_dims: [128, 64] # Example hidden layer sizes for the QNetwork
-hidden_dims: [256, 128] 
-output_dims: 1 # Output is a single Q-value for the state
-#learning_rate: 0.00025
-learning_rate: 0.0001
+# DQN Agent parameters (CNN Version)
+network_type: "cnn" # Specify network type: 'mlp' or 'cnn'
+cnn_input_channels: 4 # Number of channels for the CNN input
 gamma: 0.99 # Discount factor
 epsilon_start: 1.0
 epsilon_end: 0.01
-epsilon_decay_frames: 1000000 # How many frames to decay epsilon over
-batch_size: 32
-memory_size: 50000 # Replay buffer size
-target_update_freq: 1000 # Steps (frames or piece drops) to update target network
+epsilon_decay_frames: 2000000 # CNN might need longer to learn
+batch_size: 64 # Larger batch size can be stable for CNNs
+memory_size: 100000 # Increased memory size
+target_update_freq: 2500 # Update target network less frequently
 
 # Training parameters
-num_episodes: 50000
-max_steps_per_episode: 3000 # Max moves per game episode during training
+num_episodes: 30000
+learning_rate: 0.0001
+max_steps_per_episode: 1000 # Max moves per game episode during training
 save_model_freq: 100 # Episodes
 eval_freq: 10000 # Episodes (how often to run an evaluation game with rendering/screenshot)
 eval_step_wait_ms: 1
@@ -72,17 +69,30 @@ combo_multiplier_schedule:                # << 新增: 连击得分的乘数表
   - 3  # Combo 9
   - 3  # Combo 10+ (之后的都按3倍计算)
 
+# Reward Weights (Heuristic part, for T-Spin focus)
+# Note: With CNN, we rely more on score, but explicit rewards can guide learning.
+game_over_penalty: -500 # Heavier penalty for game over
+line_clear_reward: 100 # Base reward per line cleared
+tetris_reward_bonus: 400 # Bonus for clearing 4 lines at once
+
+# --- T-Spin Specific Rewards ---
+# These are crucial for teaching the AI the value of T-Spins
+tspin_reward: 400          # Base reward for any successful T-Spin
+tspin_mini_reward: 100     # T-Spin Mini (no lines)
+tspin_single_reward: 800   # T-Spin Single
+tspin_double_reward: 1200  # T-Spin Double (very high value)
+tspin_triple_reward: 1600  # T-Spin Triple (ultimate goal)
 # ... (其他奖励/惩罚因子可以保留，以便我们切换回“启发式”奖励模式) ...
 
-# Reward Weights (Heuristic part of the reward beyond score change)
-height_penalty_factor: -0.1
-hole_penalty_factor: -2.5 # Original prompt value, consider making it more negative like -50 or -100
-bumpiness_penalty_factor: -0.8 # Original prompt value, consider -5 or -10
-lines_cleared_reward_factor: 200
-game_over_penalty: -120
-piece_drop_reward: -0.01 # Small positive reward for successfully placing a piece without game over
-combo_base_reward: 200
-well_occupancy_penalty_factor: -8.0 # <<< 新增: 井区占有惩罚因子 (可调整)
+# # Reward Weights (Heuristic part of the reward beyond score change)
+# height_penalty_factor: -0.1
+# hole_penalty_factor: -2.5 # Original prompt value, consider making it more negative like -50 or -100
+# bumpiness_penalty_factor: -0.8 # Original prompt value, consider -5 or -10
+# lines_cleared_reward_factor: 200
+# game_over_penalty: -120
+# piece_drop_reward: -0.01 # Small positive reward for successfully placing a piece without game over
+# combo_base_reward: 200
+# well_occupancy_penalty_factor: -8.0 # <<< 新增: 井区占有惩罚因子 (可调整)
 
 feature_scaling_factors:
   max_height: 20.0
