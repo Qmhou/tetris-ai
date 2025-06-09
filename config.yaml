@@ -39,10 +39,23 @@ target_update_freq: 2500 # Update target network less frequently
 num_episodes: 3000000
 learning_rate: 0.0001
 max_steps_per_episode: 1000 # Max moves per game episode during training
-save_model_freq: 100 # Episodes
-eval_freq: 100000 # Episodes (how often to run an evaluation game with rendering/screenshot)
+save_model_freq: 10000 # Episodes
+eval_freq: 30000 # Episodes (how often to run an evaluation game with rendering/screenshot)
 eval_step_wait_ms: 1
 log_freq: 100 # Episodes (how often to print training stats)
+
+# --- Auxiliary Learning Parameters ---
+use_auxiliary_heads: true
+aux_loss_weight_lines: 0.3    # Weight for the 'completed lines' prediction task
+aux_loss_weight_holes: 0.2    # Weight for the 'holes' prediction task
+aux_loss_weight_height: 0.1   # Weight for the 'aggregate height' prediction task
+
+
+# --- Prioritized Experience Replay (PER) Parameters ---
+per_epsilon: 0.01  # Small constant to ensure no priority is zero
+per_alpha: 0.6     # Controls how much prioritization is used (0=random, 1=full)
+per_beta_start: 0.4 # Initial value for importance sampling, anneals to 1.0
+per_beta_frames: 1000000 # Number of frames over which to anneal beta
 
 # Paths
 weights_dir: "weights/"

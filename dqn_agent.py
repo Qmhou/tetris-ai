@@ -7,18 +7,22 @@ import numpy as np
 import random
 from collections import deque
 import os
+from replay_buffer import PERBuffer
+
 
 class QNetwork(nn.Module):
     """
     A Convolutional Neural Network to evaluate the value of Tetris board states.
     It takes a multi-channel 2D representation of the board as input.
     """
+    """
+    A multi-headed CNN. It predicts the main V-value and several auxiliary targets.
+    """
     def __init__(self, input_channels):
         super(QNetwork, self).__init__()
         
-        # Convolutional layers to process the board "image"
+        # --- Shared Convolutional Body ---
         self.conv_layers = nn.Sequential(
-            # Input shape: [N, input_channels, 20, 10]
             nn.Conv2d(in_channels=input_channels, out_channels=32, kernel_size=3, stride=1, padding=1),
             nn.ReLU(),
             nn.Conv2d(in_channels=32, out_channels=64, kernel_size=3, stride=1, padding=1),
@@ -27,24 +31,50 @@ class QNetwork(nn.Module):
             nn.ReLU()
         )
         
-        # Flattened size calculation assumes input HxW is 20x10.
-        # Conv layers with padding=1 and stride=1 preserve the dimensions.
         flattened_size = 64 * 20 * 10
         
-        # Fully connected layers to produce the final state value (V-value)
-        self.fc_layers = nn.Sequential(
+        # --- Multiple Output Heads ---
+        # 1. Main Value Head (predicts V-value)
+        self.value_head = nn.Sequential(
             nn.Linear(flattened_size, 512),
             nn.ReLU(),
-            nn.Linear(512, 1) # Output a single value V(s')
+            nn.Linear(512, 1)
+        )
+        
+        # 2. Auxiliary Head for Completed Lines (Classification: 0, 1, 2, 3, or 4 lines)
+        self.lines_head = nn.Sequential(
+            nn.Linear(flattened_size, 256),
+            nn.ReLU(),
+            nn.Linear(256, 5) # 5 classes for 0, 1, 2, 3, 4 lines
+        )
+        
+        # 3. Auxiliary Head for Hole Count (Regression)
+        self.holes_head = nn.Sequential(
+            nn.Linear(flattened_size, 256),
+            nn.ReLU(),
+            nn.Linear(256, 1) # Predict a single value for hole count
+        )
+
+        # 4. Auxiliary Head for Aggregate Height (Regression)
+        self.height_head = nn.Sequential(
+            nn.Linear(flattened_size, 256),
+            nn.ReLU(),
+            nn.Linear(256, 1) # Predict a single value for aggregate height
         )
 
     def forward(self, state):
-        # The state is expected to be a tensor of shape [N, C, H, W]
-        x = self.conv_layers(state)
-        x = x.view(x.size(0), -1) # Flatten the tensor
-        q_value = self.fc_layers(x)
-        return q_value
+        # Pass through the shared convolutional body
+        shared_features = self.conv_layers(state)
+        shared_features = shared_features.view(shared_features.size(0), -1) # Flatten
 
+        # Get outputs from all heads
+        value = self.value_head(shared_features)
+        lines = self.lines_head(shared_features)
+        holes = self.holes_head(shared_features)
+        height = self.height_head(shared_features)
+        
+        return value, lines, holes, height
+    
 class DQNAgent:
     def __init__(self, config, device=None):
         self.config = config
@@ -68,7 +98,13 @@ class DQNAgent:
         self.target_net.eval() 
 
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=config['learning_rate'])
-        self.memory = deque(maxlen=config['memory_size'])
+        self.memory = PERBuffer(
+            capacity=config['memory_size'],
+            per_epsilon=config['per_epsilon'],
+            per_alpha=config['per_alpha'],
+            per_beta_start=config['per_beta_start'],
+            per_beta_frames=config['per_beta_frames']
+        )
         
         self.frames_done = 0
         self.epsilon_start = config['epsilon_start']
@@ -86,24 +122,23 @@ class DQNAgent:
     def select_action(self, possible_moves_list, is_eval_mode=False):
         """
         Selects an action using an epsilon-greedy policy.
-        In eval mode, it's purely greedy. For CNN, it uses batch prediction for efficiency.
+        Correctly handles the multi-headed network output.
         """
         if not possible_moves_list: 
             return None, None 
 
         if not is_eval_mode and random.random() < self.epsilon:
-            # Exploration: choose a random action
             chosen_action_index = random.randrange(len(possible_moves_list))
             return chosen_action_index, possible_moves_list[chosen_action_index]
         else:
-            # Exploitation: choose the best action
             with torch.no_grad():
-                # Extract tensors, batch them, and evaluate
                 state_tensors = [move[1] for move in possible_moves_list]
                 batch_tensor = torch.cat(state_tensors, dim=0).to(self.device)
-                q_values = self.policy_net(batch_tensor).squeeze().cpu().numpy()
                 
-                # If there's only one move, q_values might be a float, not an array
+                # Unpack the tuple from the network, we only need the value predictions here.
+                value_predictions, _, _, _ = self.policy_net(batch_tensor)
+                q_values = value_predictions.squeeze().cpu().numpy()
+                
                 if q_values.ndim == 0:
                     chosen_action_index = 0
                 else:
@@ -111,76 +146,104 @@ class DQNAgent:
                 
                 return chosen_action_index, possible_moves_list[chosen_action_index]
 
-    def remember(self, state_tensor, reward, next_best_q_value, done):
-        """Stores an experience in the replay buffer. The state is now a CNN input tensor."""
-        self.memory.append((state_tensor, reward, next_best_q_value, done))
+
+    def remember(self, state_tensor, reward, next_best_q_value, done, aux_labels):
+        """Stores an experience, now including auxiliary task labels."""
+        experience = (state_tensor, reward, next_best_q_value, done, aux_labels)
+        self.memory.add(experience)
 
     def learn(self):
         """
-        Samples a batch from the replay buffer and performs a Q-learning update.
+        Samples a batch, calculates a composite loss (Value + Auxiliaries),
+        and updates the network.
         """
         if len(self.memory) < self.batch_size:
             return None 
 
-        batch = random.sample(self.memory, self.batch_size)
-        # Unzip the batch. 'states' will be a tuple of tensors.
-        states, rewards, next_states_best_q, dones = zip(*batch)
+        tree_indices, batch_data, is_weights = self.memory.sample(self.batch_size)
+        
+        # Unpack batch data, now including auxiliary labels
+        states, rewards, next_qs, dones, aux_labels_list = zip(*batch_data)
 
-        # Batch states, which are now tensors, by concatenating them
+        # --- Prepare Tensors ---
         states_tensor = torch.cat(states, dim=0).to(self.device)
         rewards_tensor = torch.FloatTensor(rewards).unsqueeze(1).to(self.device)
-        next_states_best_q_tensor = torch.FloatTensor(next_states_best_q).unsqueeze(1).to(self.device)
+        next_qs_tensor = torch.FloatTensor(next_qs).unsqueeze(1).to(self.device)
         dones_tensor = torch.BoolTensor(dones).unsqueeze(1).to(self.device)
-
-        # Get current Q-values for the states in the batch
-        current_q_values = self.policy_net(states_tensor)
+        is_weights_tensor = torch.FloatTensor(is_weights).unsqueeze(1).to(self.device)
         
-        # Calculate the target Q-values using the Bellman equation
-        target_q_values = rewards_tensor + (self.gamma * next_states_best_q_tensor * (~dones_tensor))
+        # Prepare auxiliary label tensors
+        true_lines = torch.LongTensor([l['lines'] for l in aux_labels_list]).to(self.device)
+        true_holes = torch.FloatTensor([l['holes'] for l in aux_labels_list]).unsqueeze(1).to(self.device)
+        true_height = torch.FloatTensor([l['height'] for l in aux_labels_list]).unsqueeze(1).to(self.device)
+        
+        # --- Forward Pass ---
+        pred_value, pred_lines, pred_holes, pred_height = self.policy_net(states_tensor)
 
-        # Compute loss
-        loss = F.mse_loss(current_q_values, target_q_values.detach()) 
+        # --- Calculate Composite Loss ---
+        # 1. Main Value Loss (MSE, weighted by PER)
+        target_value = rewards_tensor + (self.gamma * next_qs_tensor * (~dones_tensor))
+        td_errors = (target_value - pred_value).detach()
+        value_loss = (is_weights_tensor * F.mse_loss(pred_value, target_value.detach(), reduction='none')).mean()
+        
+        # 2. Auxiliary Losses
+        lines_loss = F.cross_entropy(pred_lines, true_lines)
+        holes_loss = F.mse_loss(pred_holes, true_holes)
+        height_loss = F.mse_loss(pred_height, true_height)
 
-        # Optimize the model
+        # 3. Total Loss
+        total_loss = value_loss + \
+                     self.config['aux_loss_weight_lines'] * lines_loss + \
+                     self.config['aux_loss_weight_holes'] * holes_loss + \
+                     self.config['aux_loss_weight_height'] * height_loss
+
+        # --- Optimization & Priority Update ---
         self.optimizer.zero_grad()
-        loss.backward()
+        total_loss.backward()
         torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), 1.0) 
         self.optimizer.step()
+        
+        self.memory.update_priorities(tree_indices, td_errors.squeeze().cpu().numpy())
 
-        # Update the target network periodically
         if self.frames_done % self.target_update_freq == 0:
             self.target_net.load_state_dict(self.policy_net.state_dict())
             
-        return loss.item()
+        return total_loss.item(), value_loss.item(), lines_loss.item(), holes_loss.item(), height_loss.item()
 
     def get_max_q_value_for_next_states(self, possible_next_moves_list):
-        """[CNN Version] Evaluates all possible next states in a batch and returns the maximum Q-value."""
+        """[Multi-head fix] Evaluates all possible next states and returns the maximum V-value."""
         if not possible_next_moves_list:
             return 0.0
 
         with torch.no_grad():
             next_state_tensors = [move[1] for move in possible_next_moves_list]
             batch_tensor = torch.cat(next_state_tensors, dim=0).to(self.device)
-            q_values = self.target_net(batch_tensor)
-            max_q_value = torch.max(q_values).item()
+            
+            # Unpack the tuple from the target network, we only need the value predictions.
+            value_predictions, _, _, _ = self.target_net(batch_tensor)
+            
+            # Find the max value from the value_predictions tensor.
+            max_q_value = torch.max(value_predictions).item()
             return max_q_value
 
     def get_best_action_and_value(self, possible_moves_list):
-        """[CNN Version] Evaluates all possible moves and returns the best action tuple and its V-value."""
+        """[Multi-head fix] Evaluates all moves and returns the best action and its V-value."""
         if not possible_moves_list:
             return None, -float('inf') 
             
         with torch.no_grad():
             state_tensors = [move[1] for move in possible_moves_list]
             batch_tensor = torch.cat(state_tensors, dim=0).to(self.device)
-            q_values = self.policy_net(batch_tensor).squeeze().cpu().numpy()
+
+            # Unpack the tuple from the policy network.
+            value_predictions, _, _, _ = self.policy_net(batch_tensor)
+            q_values = value_predictions.squeeze().cpu().numpy()
 
             if q_values.ndim == 0:
                 best_idx = 0
             else:
                 best_idx = np.argmax(q_values)
             
-            # Ensure q_values is treated as an array for consistent indexing
             q_values_array = np.atleast_1d(q_values)
             
             return possible_moves_list[best_idx], q_values_array[best_idx]

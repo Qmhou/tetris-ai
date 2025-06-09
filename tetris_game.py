@@ -292,18 +292,26 @@ class TetrisGame:
                             
                             # Use a hash of the grid to avoid duplicate evaluations
                             grid_hash = tuple(map(tuple, temp_grid))
-                            if grid_hash not in visited_hashes:
-                                visited_hashes.add(grid_hash)
-                                
-                                # Get the absolute coordinates of the final piece for the CNN input
-                                final_piece_coords = [(sim_piece.y + ro, sim_piece.x + co) for ro, co in sim_piece.shape_coords]
-                                
-                                # Convert the resulting grid to the multi-channel tensor for the CNN
-                                cnn_input = self._convert_grid_to_cnn_input(temp_grid, final_piece_coords)
-                                
-                                # Store the action info and the resulting state tensor
-                                action_info = (piece.type, rot_idx, c, r)
-                                possible_placements.append((action_info, cnn_input))
+                            # --- Calculate Auxiliary Labels ---
+                            # We calculate labels based on the grid *before* line clearing
+                            height, holes, _, _ = self._calculate_grid_metrics(temp_grid)
+                            
+                            # Simulate line clear just to get the count
+                            _cleared_grid, completed_lines_count = self._simulate_line_clear(temp_grid)
+                            
+                            aux_labels = {
+                                'lines': completed_lines_count,
+                                'holes': holes,
+                                'height': height
+                            }
+                            
+                            # Convert the resulting grid to CNN input
+                            final_piece_coords = [(sim_piece.y + ro, sim_piece.x + co) for ro, co in sim_piece.shape_coords]
+                            cnn_input = self._convert_grid_to_cnn_input(temp_grid, final_piece_coords)
+                            
+                            # Store action info, CNN tensor, AND auxiliary labels
+                            action_info = (piece.type, rot_idx, c, r)
+                            possible_placements.append((action_info, cnn_input, aux_labels))
         
         return possible_placements
 
