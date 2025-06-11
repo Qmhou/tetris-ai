@@ -173,7 +173,8 @@ class DQNAgent:
         is_weights_tensor = torch.FloatTensor(is_weights).unsqueeze(1).to(self.device)
         
         # Prepare auxiliary label tensors
-        true_lines = torch.LongTensor([l['lines'] for l in aux_labels_list]).to(self.device)
+        true_lines = torch.LongTensor([min(max(0, l['lines']), 4) for l in aux_labels_list]).to(self.device)
+
         true_holes = torch.FloatTensor([l['holes'] for l in aux_labels_list]).unsqueeze(1).to(self.device)
         true_height = torch.FloatTensor([l['height'] for l in aux_labels_list]).unsqueeze(1).to(self.device)
         

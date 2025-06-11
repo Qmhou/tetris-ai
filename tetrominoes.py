@@ -1,5 +1,5 @@
 import pygame
-
+import copy
 # Define colors for tetrominoes
 COLORS = {
     'I': (0, 255, 255),   # Cyan
@@ -87,44 +87,42 @@ class Piece:
 # tetrominoes.py (修改 Piece.rotate 方法)
     def rotate(self, direction, board_width, board_height, is_valid_position_func):
         """
-        使用SRS踢墙数据来旋转方块。
-        direction: 1 表示顺时针, -1 表示逆时针。
-        is_valid_position_func: 一个回调函数，用于检查新位置是否有效。
+        [Robust Version] Attempts to rotate the piece using SRS kick data.
+        It works on a temporary copy to prevent corrupting the piece's state on failure.
         """
-        from srs_data import get_kick_offsets # 确保在函数内导入以避免循环依赖
+        from srs_data import get_kick_offsets # Local import to avoid circular dependency
 
-        if self.type == 'O': # O型方块不旋转
-            return True
-
-        num_rotations = len(TETROMINOES[self.type])
-        original_rotation = self.rotation
+        # Create a temporary clone of the piece to perform tests on.
+        # This prevents modifying the original piece if all rotation attempts fail.
+        temp_piece = copy.deepcopy(self)
         
-        # 计算目标旋转状态 (处理-1的情况)
-        target_rotation = (original_rotation + direction + num_rotations) % num_rotations
+        original_rotation = temp_piece.rotation
+        num_rotations = len(TETROMINOES[temp_piece.type])
+        
+        if num_rotations <= 1:
+            return False # Cannot rotate O-pieces
 
-        # 获取需要测试的踢墙偏移量列表
+        target_rotation = (original_rotation + direction + num_rotations) % num_rotations
+        temp_piece.rotation = target_rotation
+        temp_piece.shape_coords = TETROMINOES[temp_piece.type][target_rotation]
+
         kick_test_set = get_kick_offsets(self.type, original_rotation, target_rotation)
         
-        # 获取旋转后的新形状坐标
-        new_shape_coords = TETROMINOES[self.type][target_rotation]
-
-        # 依次尝试每个踢墙偏移量
         for dx_kick, dy_kick in kick_test_set:
-            # 计算应用偏移后的新位置
-            # Pygame中Y轴向下为正，而SRS标准通常向上为正，所以y_kick需要反转符号
+            # Apply kick to the temporary piece's original coordinates
             potential_x = self.x + dx_kick
-            potential_y = self.y - dy_kick # << 关键点：注意这里的减号！
-
-            # 使用游戏主逻辑提供的函数检查新位置是否有效
-            if is_valid_position_func(new_shape_coords, potential_x, potential_y):
-                # 如果有效，更新方块状态并成功返回
+            potential_y = self.y - dy_kick # Pygame Y-axis is inverted
+            
+            # Check if the new position is valid
+            if is_valid_position_func(temp_piece.shape_coords, potential_x, potential_y):
+                # If a valid rotation is found, update the REAL piece's state all at once.
                 self.x = potential_x
                 self.y = potential_y
                 self.rotation = target_rotation
-                self.shape_coords = new_shape_coords
-                return True
+                self.shape_coords = temp_piece.shape_coords
+                return True # Rotation successful
         
-        # 如果所有踢墙尝试都失败了，则旋转失败
+        # If all kick tests fail, do nothing to the original piece and return failure.
         return False
 
 if __name__ == '__main__':

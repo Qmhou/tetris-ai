@@ -1,5 +1,5 @@
 # train.py
-# (版本：最终修复版，集成所有功能，无代码冲突)
+# (版本：最终修复版，包含T-Spin日志和所有功能)
 
 import pygame
 import yaml
@@ -27,7 +27,7 @@ def train(model_to_load=None):
     """
     config = load_config()
     
-    # --- 1. 初始化环境和目录 ---
+    # --- 1. 初始化 ---
     os.makedirs(config.get('weights_dir', 'weights/'), exist_ok=True)
     os.makedirs(config.get('screenshots_dir', 'screenshots/'), exist_ok=True)
     os.makedirs(config.get('logs_dir', 'logs/'), exist_ok=True)
@@ -35,7 +35,7 @@ def train(model_to_load=None):
     game = TetrisGame(config, render_mode=False) 
     agent = DQNAgent(config)
 
-    # --- 2. 加载模型逻辑 ---
+    # --- 2. 加载模型 ---
     start_absolute_episode = 1
     path_to_attempt_load = model_to_load
     if not path_to_attempt_load and config.get('auto_load_latest_weights', True):
@@ -50,18 +50,12 @@ def train(model_to_load=None):
                 if get_episode_num_from_filename(latest_model_filename) != -1:
                     path_to_attempt_load = os.path.join(weights_dir, latest_model_filename)
                     print(f"未提供模型路径，尝试自动加载最新模型: {path_to_attempt_load}")
-            else:
-                print(f"权重目录 '{weights_dir}' 为空或无匹配文件。将开始新训练。")
-        else:
-            print(f"权重目录 '{weights_dir}' 未找到。将开始新训练。")
-
+    
     if path_to_attempt_load:
         load_success, next_episode_to_start_from = agent.load_weights(path_to_attempt_load)
         if load_success:
             start_absolute_episode = next_episode_to_start_from
             print(f"将从绝对Episode {start_absolute_episode} 继续训练。")
-        else:
-            print(f"无法从 {path_to_attempt_load} 加载权重。将从Episode 1开始新训练。")
     else:
         print("未指定或未找到可加载的模型。将从Episode 1开始新训练。")
 
@@ -72,26 +66,19 @@ def train(model_to_load=None):
         run_id = mlflow.active_run().info.run_id
         print(f"MLflow Run-ID: {run_id}")
 
-        mlflow.log_params({
-            'learning_rate': config['learning_rate'], 'gamma': config['gamma'],
-            'batch_size': config['batch_size'], 'epsilon_start': config['epsilon_start'],
-            'epsilon_end': config['epsilon_end'], 'epsilon_decay_frames': config['epsilon_decay_frames'],
-            'network_type': config.get('network_type', 'cnn'), 'target_update_freq': config['target_update_freq'],
-            'per_alpha': config.get('per_alpha'), 'per_beta_start': config.get('per_beta_start'),
-            'per_beta_frames': config.get('per_beta_frames'),
-            'aux_loss_weight_lines': config.get('aux_loss_weight_lines'),
-            'aux_loss_weight_holes': config.get('aux_loss_weight_holes'),
-            'aux_loss_weight_height': config.get('aux_loss_weight_height')
-        })
+        mlflow.log_params(config)
         mlflow.log_artifact("config.yaml")
 
+        # --- 使用T-Spin的正确reward_keys ---
         reward_component_keys = [
             "tspin_reward", "tspin_mini_reward", "tspin_single_reward",
             "tspin_double_reward", "tspin_triple_reward", "line_clear_reward",
             "tetris_reward_bonus", "game_over_penalty"
         ]
+
         episode_total_rewards_deque = deque(maxlen=100)
         episode_lines_deque = deque(maxlen=100)
+        episode_steps_deque = deque(maxlen=100) # Add a deque to store steps per episode
         episode_trigger_counts_deques = defaultdict(lambda: deque(maxlen=100))
         start_time = time.time()
 
@@ -102,7 +89,10 @@ def train(model_to_load=None):
             game.reset() 
             current_episode_total_reward = 0.0
             current_episode_lines = 0
-            
+            current_episode_steps = 0 # Initialize step counter for the new episode
+            current_episode_trigger_counts = defaultdict(int)
+            total_loss, value_loss, lines_loss, holes_loss, height_loss = None, None, None, None, None
+
             for step_in_episode in range(config.get('max_steps_per_episode', 3000)):
                 if game.game_over: break
 
@@ -111,6 +101,7 @@ def train(model_to_load=None):
 
                 agent.frames_done += 1 
                 agent._decay_epsilon() 
+                current_episode_steps += 1 # Increment the step counter for the current episode
 
                 chosen_action_idx, chosen_move_data = agent.select_action(possible_moves)
                 if chosen_move_data is None: break 
@@ -122,6 +113,9 @@ def train(model_to_load=None):
 
                 current_episode_total_reward += total_reward_this_step
                 current_episode_lines += lines_cleared
+                for key in reward_component_keys:
+                    if reward_info_dict.get(key, 0.0) != 0:
+                        current_episode_trigger_counts[key] += 1
                 
                 next_best_q_value = 0.0
                 if not game_over_after_action:
@@ -130,37 +124,65 @@ def train(model_to_load=None):
                          next_best_q_value = agent.get_max_q_value_for_next_states(next_possible_moves)
                 
                 agent.remember(s_prime_tensor, total_reward_this_step, next_best_q_value, game_over_after_action, aux_labels)
-                agent.learn()
-            
-            # --- Episode End: Update stats ---
+                
+                learn_result = agent.learn()
+                if learn_result:
+                    total_loss, value_loss, lines_loss, holes_loss, height_loss = learn_result
+
+
+            # --- Episode End: Update stats deques ---
             episode_total_rewards_deque.append(current_episode_total_reward)
             episode_lines_deque.append(current_episode_lines)
+            episode_steps_deque.append(current_episode_steps) # Add current episode's steps to the deque
+            for key in reward_component_keys:
+                episode_trigger_counts_deques[key].append(current_episode_trigger_counts[key])
+
+
+            for key in reward_component_keys:
+                episode_trigger_counts_deques[key].append(current_episode_trigger_counts[key])
+
 
             # --- Logging Period ---
-            if current_absolute_episode % config['log_freq'] == 0:
+            if current_absolute_episode > 0 and current_absolute_episode % config['log_freq'] == 0:
                 avg_total_reward_100 = np.mean(episode_total_rewards_deque) if episode_total_rewards_deque else 0.0
                 avg_lines_100 = np.mean(episode_lines_deque) if episode_lines_deque else 0.0
+                avg_steps_100 = np.mean(episode_steps_deque) if episode_steps_deque else 0.0 # Calculate average steps
                 
+                # --- Console Log ---
+                tsd_count = sum(episode_trigger_counts_deques['tspin_double_reward'])
+                tst_count = sum(episode_trigger_counts_deques['tspin_triple_reward'])
                 print(f"Ep: {current_absolute_episode}, Steps: {agent.frames_done}, Eps: {agent.epsilon:.4f}, "
-                      f"AvgRew100: {avg_total_reward_100:.2f}, AvgLines100: {avg_lines_100:.2f}")
+                      f"AvgRew100: {avg_total_reward_100:.2f}, AvgLines100: {avg_lines_100:.2f}, AvgSteps100: {avg_steps_100:.2f}, " # Add to console log
+                      f"Loss: {total_loss or 0.0:.4f}, TSD_Count100: {tsd_count}, TST_Count100: {tst_count}")
 
-                mlflow.log_metrics({
+                # --- MLflow Log ---
+                mlflow_metrics = {
                     'avg_reward_100eps': avg_total_reward_100,
                     'avg_lines_100eps': avg_lines_100,
+                    'avg_steps_100eps': avg_steps_100, # Add to mlflow metrics
                     'epsilon': agent.epsilon,
-                    'per_beta': agent.memory.beta
-                }, step=current_absolute_episode)
+                    'per_beta': agent.memory.beta,
+                    'loss_total': total_loss,
+                    'loss_value': value_loss,
+                    'loss_aux_lines': lines_loss,
+                    'loss_aux_holes': holes_loss,
+                    'loss_aux_height': height_loss
+                }
+                for key in reward_component_keys:
+                     mlflow_metrics[f'count_{key}_100eps'] = sum(episode_trigger_counts_deques[key])
+                mlflow.log_metrics({k: v for k, v in mlflow_metrics.items() if v is not None}, step=current_absolute_episode)
+                
+                # CSV logging is getting complex, focusing on console and mlflow for now.
+                # You can add the new metric to the CSV logic if needed.
 
-            # --- Periodic Model Save ---
             if current_absolute_episode > 0 and current_absolute_episode % config['save_model_freq'] == 0:
                 model_path = agent.save_weights(current_absolute_episode)
                 if model_path: mlflow.log_artifact(model_path, artifact_path="checkpoints")
 
-            # --- Periodic Evaluation ---
             if current_absolute_episode > 0 and current_absolute_episode % config['eval_freq'] == 0:
                 print(f"--- Running evaluation for Episode {current_absolute_episode} ---")
                 eval_game = TetrisGame(config, render_mode=True) 
-                eval_game.reset() 
+                eval_game.reset()
                 for eval_step in range(config.get('max_steps_per_episode', 3000)):
                     if eval_game.game_over: break 
                     eval_possible_moves = eval_game.get_all_possible_next_states_and_features()
@@ -179,11 +201,10 @@ def train(model_to_load=None):
                 if eval_game.render_mode: pygame.display.quit()
                 del eval_game
 
-        # --- End of Training Session ---
         if num_episodes_this_session > 0:
-            final_absolute_episode_trained = start_absolute_episode + num_episodes_this_session - 1
-            print(f"Training session finished. Last trained absolute episode: {final_absolute_episode_trained}")
-            final_model_path = agent.save_weights(final_absolute_episode_trained)
+            final_episode = start_absolute_episode + num_episodes_this_session - 1
+            print(f"Training session finished. Last trained episode: {final_episode}")
+            final_model_path = agent.save_weights(final_episode)
             if final_model_path: mlflow.log_artifact(final_model_path, artifact_path="final_model")
 
 if __name__ == '__main__':

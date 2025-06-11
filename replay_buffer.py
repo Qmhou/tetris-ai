@@ -17,11 +17,11 @@ class SumTree:
         tree_idx = self.data_pointer + self.capacity - 1
         self.data[self.data_pointer] = data
         self.update(tree_idx, priority)
-        
+
         self.data_pointer += 1
         if self.data_pointer >= self.capacity:
             self.data_pointer = 0
-        
+
         if self.n_entries < self.capacity:
             self.n_entries += 1
 
@@ -50,7 +50,7 @@ class SumTree:
                 else:
                     s -= self.tree[left_child_idx]
                     parent_idx = right_child_idx
-        
+
         data_idx = leaf_idx - self.capacity + 1
         return leaf_idx, self.tree[leaf_idx], self.data[data_idx]
 
@@ -80,36 +80,36 @@ class PERBuffer:
         is_weights = np.empty(batch_size, dtype=np.float32)
 
         segment = self.tree.total_priority / batch_size
-        
+
         # Anneal beta
         self.beta = np.min([1., self.beta + self.beta_increment_per_sampling])
-        
+
         for i in range(batch_size):
             a = segment * i
             b = segment * (i + 1)
             s = random.uniform(a, b)
-            
+
             idx, p, data = self.tree.get(s)
-            
+
             sampling_prob = p / self.tree.total_priority
             is_weights[i] = np.power(self.tree.n_entries * sampling_prob, -self.beta)
-            
+
             batch_indices[i] = idx
             batch_data[i] = data
-        
+
         # Normalize weights for stability
         is_weights /= is_weights.max()
-        
+
         return batch_indices, batch_data, is_weights
 
     def update_priorities(self, tree_indices, td_errors):
         priorities = np.abs(td_errors) + self.epsilon
         clipped_priorities = np.minimum(priorities, self.max_priority)
-        
+
         powered_priorities = np.power(clipped_priorities, self.alpha)
-        
+
         for ti, p in zip(tree_indices, powered_priorities):
             self.tree.update(ti, p)
-            
+
     def __len__(self):
         return self.tree.n_entries

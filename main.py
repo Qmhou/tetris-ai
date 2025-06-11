@@ -34,7 +34,7 @@ def manual_mode(config):
 
     running = True
     fall_timer = 0
-    fall_speed = 500  # ms
+    fall_speed = 50000  # ms
     clock = pygame.time.Clock()
 
     # --- 完整的、统一的按键到动作的映射 ---
@@ -211,7 +211,12 @@ def ai_play_mode(config, model_path):
                     if decision_is_to_hold:
                         op_sequence = ['hold']
                     elif best_action_info_no_hold:
-                        op_sequence = generate_move_sequence(game.current_piece, best_action_info_no_hold)
+                                            # Pass the whole game object to the new pathfinding function
+                        op_sequence = generate_move_sequence(game, best_action_info_no_hold)
+                        # If no path is found, fall back to instant placement for this move
+                        if op_sequence is None:
+                            game.apply_ai_chosen_action(best_action_info_no_hold)
+
                     else: # No possible moves found
                         game.game_over = True
                 else:

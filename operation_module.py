@@ -1,50 +1,88 @@
 # operation_module.py
+# (版本：最终版 - 采用高效的二维空间BFS寻路)
 
-from tetrominoes import TETROMINOES
+from collections import deque
+import copy
 
-def generate_move_sequence(current_piece, target_placement_info):
+# 确保导入了Piece和TETROMINOES
+from tetrominoes import Piece, TETROMINOES
+
+def generate_move_sequence(game, target_placement_info):
     """
-    根据当前方块状态和AI决策的目标落点，生成一个简单、直观的操作指令序列。
-    这个序列主要用于在AI游戏模式下进行可视化回放。
-
-    Args:
-        current_piece (Piece): 游戏中的当前活动方块实例。
-        target_placement_info (tuple): AI决策的最佳落点信息 
-                                     (piece_type, target_rotation, target_x, target_y)。
-
-    Returns:
-        list: 一个包含操作指令字符串的列表，例如 ['rotate_cw', 'left', 'hard_drop']。
+    [Final Optimized Version] Finds the shortest sequence of moves using an
+    efficient BFS that searches only in the (x, rotation) space.
     """
-    _, target_rotation, target_x, _ = target_placement_info
-    
-    op_sequence = []
-    
-    # 步骤 1: 计算并添加旋转指令
-    current_rot = current_piece.rotation
-    num_rotations = len(TETROMINOES[current_piece.type])
-    
-    if current_rot != target_rotation:
-        # 计算顺时针和逆时针两种路径的次数
-        rot_diff_cw = (target_rotation - current_rot + num_rotations) % num_rotations
-        rot_diff_ccw = (current_rot - target_rotation + num_rotations) % num_rotations
+    start_piece = game.current_piece
+    _target_type, target_rot, target_x, target_y = target_placement_info
 
-        # 选择次数较少的那条路径
-        if rot_diff_cw <= rot_diff_ccw:
-            op_sequence.extend(['rotate_cw'] * rot_diff_cw)
-        else:
-            op_sequence.extend(['rotate_ccw'] * rot_diff_ccw)
+    # --- BFS for Rotation and Horizontal Movement ONLY ---
+    # The state for our search is (x, rotation).
+    start_state = (start_piece.x, start_piece.rotation)
 
-    # 步骤 2: 计算并添加水平移动指令
-    # 注意：这里我们基于方块旋转前的x坐标进行计算。
-    # 实际执行时，由于是逐帧移动并有碰撞检测，即使旋转后有“踢墙”位移，
-    # 后续的水平移动指令也会在新的位置上生效，最终引导方块到正确的列。
-    x_diff = target_x - current_piece.x
-    if x_diff > 0:
-        op_sequence.extend(['right'] * x_diff)
-    elif x_diff < 0:
-        op_sequence.extend(['left'] * abs(x_diff))
-        
-    # 步骤 3: 添加最终的硬降指令
-    op_sequence.append('hard_drop')
-    
-    return op_sequence
+    # queue stores tuples of: ((current_x, current_rot), path_so_far)
+    queue = deque([(start_state, [])])
+    visited = {start_state}
+
+    path_to_target_config = None
+
+    # Limit search depth to prevent extreme cases on very cluttered boards.
+    max_bfs_steps = 2500
+    steps_taken = 0
+
+    while queue and steps_taken < max_bfs_steps:
+        (current_x, current_rot), path = queue.popleft()
+        steps_taken += 1
+
+        # --- Goal Check: Have we reached the target column and rotation? ---
+        if current_x == target_x and current_rot == target_rot:
+            # We must also verify that from this state, a hard drop is possible and leads to the correct y.
+            # This is a crucial validation step.
+            sim_piece_at_goal = Piece(current_x, start_piece.y, start_piece.type, current_rot)
+            if game._is_valid_position(sim_piece_at_goal.shape_coords, current_x, sim_piece_at_goal.y):
+                y_after_drop = sim_piece_at_goal.y
+                while game._is_valid_position(sim_piece_at_goal.shape_coords, current_x, y_after_drop + 1):
+                    y_after_drop += 1
+
+                if y_after_drop == target_y:
+                    path_to_target_config = path
+                    break # Path found and validated!
+
+        # --- Expand to next possible states (left, right, rotate_cw, rotate_ccw) ---
+        sim_piece = Piece(current_x, start_piece.y, start_piece.type, current_rot)
+
+        # Direction: dx, dr (delta_x, delta_rotation)
+        possible_moves = {
+            'left':       (-1, 0),
+            'right':      (1, 0),
+            'rotate_cw':  (0, 1),
+            'rotate_ccw': (0, -1)
+        }
+
+        for move_name, (dx, dr) in possible_moves.items():
+            # Create a copy to simulate the next move
+            next_piece = copy.deepcopy(sim_piece)
+
+            if dr != 0: # It's a rotation
+                if not next_piece.rotate(dr, game.board_width, game.board_height,
+                                         lambda s,x,y: game._is_valid_position(s,x,y, game.grid)):
+                    continue # Rotation failed
+            else: # It's a translation
+                next_piece.x += dx
+                # For translation, we only need to check validity at the current height,
+                # as the piece can potentially pass through narrow gaps before dropping.
+                if not game._is_valid_position(next_piece.shape_coords, next_piece.x, next_piece.y, game.grid):
+                    continue # Translation is blocked
+
+            new_state = (next_piece.x, next_piece.rotation)
+            if new_state not in visited:
+                visited.add(new_state)
+                new_path = path + [move_name]
+                queue.append((new_state, new_path))
+
+    # --- Assemble Final Path ---
+    if path_to_target_config is not None:
+        # A valid path for horizontal/rotation was found. Append hard_drop.
+        return path_to_target_config + ['hard_drop']
+    else:
+        # If no path is found, the target is truly unreachable via a valid sequence.
+        return None # Return None, the planner will discard this move.
