@@ -136,3 +136,6 @@ train_ms1.py
 replays/
 create_project.py
 logs/
+mlruns/
+memo.txt
+weights/
