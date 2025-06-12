@@ -11,7 +11,6 @@ The project features a complete training and evaluation framework, including det
 (ai_playback_ep18800_20250607_233308.mp4)
 
 
-
 ## Key Features
 
 -   **Expert Strategy Goal**: AI is specifically trained to learn the `s2w` (Side 2-Wide well) combo strategy.
